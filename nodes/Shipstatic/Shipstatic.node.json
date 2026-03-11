@@ -1,0 +1,17 @@
+{
+	"node": "n8n-nodes-shipstatic.shipstatic",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"categories": ["Development", "Miscellaneous"],
+	"resources": {
+		"primaryDocumentation": [
+			{
+				"url": "https://docs.shipstatic.com"
+			}
+		]
+	},
+	"alias": ["ship", "static", "hosting", "deploy", "website"],
+	"subcategories": {
+		"Development": ["Other"]
+	}
+}
