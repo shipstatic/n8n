@@ -2,7 +2,7 @@
 
 Claude Code instructions for the **ShipStatic n8n Community Node**.
 
-**n8n-nodes-shipstatic** — n8n community node that exposes the Shipstatic SDK as workflow actions. Thin wrapper over `@shipstatic/ship`. Published to npm. **Maturity:** v0.1.x — Deployments + Domains only (13 operations).
+**n8n-nodes-shipstatic** — n8n community node that exposes the ShipStatic SDK as workflow actions. Thin wrapper over `@shipstatic/ship`. Published to npm. **Maturity:** v0.1.x — Deployments + Domains only (13 operations).
 
 ## Architecture
 
