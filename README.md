@@ -65,7 +65,7 @@ Restart n8n after installing.
 1. Add a **ShipStatic** node
 2. Set Resource to **Deployment**, Operation to **Upload**
 3. Enter the path to your build output directory
-4. Run - you'll get back a live URL on `*.shipstatic.dev`
+4. Run - you'll get back a live URL on `*.shipstatic.com`
 
 ### Publish and connect a custom domain
 

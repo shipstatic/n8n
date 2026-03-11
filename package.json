@@ -1,7 +1,7 @@
 {
 	"name": "n8n-nodes-shipstatic",
 	"version": "0.1.0",
-	"description": "n8n community node for Shipstatic — deploy and manage static sites",
+	"description": "n8n community node for ShipStatic — deploy and manage static sites",
 	"keywords": ["n8n-community-node-package", "n8n", "ship", "shipstatic", "static-hosting", "deploy"],
 	"license": "MIT",
 	"author": {
