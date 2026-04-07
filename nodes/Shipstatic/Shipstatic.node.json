@@ -2,7 +2,7 @@
 	"node": "n8n-nodes-shipstatic.shipstatic",
 	"nodeVersion": "1.0",
 	"codexVersion": "1.0",
-	"categories": ["Development", "Miscellaneous"],
+	"categories": ["Development", "AI"],
 	"resources": {
 		"primaryDocumentation": [
 			{
@@ -10,8 +10,9 @@
 			}
 		]
 	},
-	"alias": ["ship", "static", "hosting", "deploy", "website"],
+	"alias": ["ship", "static", "hosting", "deploy", "website", "publish", "web", "landing page", "prototype"],
 	"subcategories": {
-		"Development": ["Other"]
+		"Development": ["Other"],
+		"AI": ["Tools"]
 	}
 }

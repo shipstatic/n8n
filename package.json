@@ -1,8 +1,20 @@
 {
 	"name": "n8n-nodes-shipstatic",
-	"version": "0.1.0",
-	"description": "n8n community node for ShipStatic — deploy and manage static sites",
-	"keywords": ["n8n-community-node-package", "n8n", "ship", "shipstatic", "static-hosting", "deploy"],
+	"version": "0.2.0",
+	"description": "Free, no account needed — deploy static websites, landing pages, and prototypes instantly from n8n workflows",
+	"keywords": [
+		"n8n-community-node-package",
+		"n8n",
+		"shipstatic",
+		"deploy",
+		"hosting",
+		"website",
+		"static-site",
+		"static-hosting",
+		"web-hosting",
+		"vibe-coding",
+		"ai"
+	],
 	"license": "MIT",
 	"author": {
 		"name": "ShipStatic",
@@ -16,26 +28,34 @@
 	"scripts": {
 		"dev": "n8n-node dev",
 		"build": "n8n-node build",
+		"test": "vitest",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
 		"format": "prettier --write .",
 		"release": "release-it"
 	},
-	"files": ["dist"],
+	"files": [
+		"dist"
+	],
 	"n8n": {
 		"n8nNodesApiVersion": 1,
-		"credentials": ["dist/credentials/ShipstaticApi.credentials.js"],
-		"nodes": ["dist/nodes/Shipstatic/Shipstatic.node.js"]
+		"credentials": [
+			"dist/credentials/ShipstaticApi.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/Shipstatic/Shipstatic.node.js"
+		]
 	},
 	"dependencies": {
-		"@shipstatic/ship": "^0.7.2"
+		"@shipstatic/ship": "^0.8.6"
 	},
 	"devDependencies": {
 		"@n8n/node-cli": "latest",
 		"eslint": "^9.0.0",
 		"prettier": "^3.0.0",
 		"release-it": "^18.0.0",
-		"typescript": "^5.0.0"
+		"typescript": "^5.0.0",
+		"vitest": "^4.1.3"
 	},
 	"peerDependencies": {
 		"n8n-workflow": "*"

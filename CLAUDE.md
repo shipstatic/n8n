@@ -2,7 +2,7 @@
 
 Claude Code instructions for the **ShipStatic n8n Community Node**.
 
-**n8n-nodes-shipstatic** — n8n community node that exposes the ShipStatic SDK as workflow actions. Thin wrapper over `@shipstatic/ship`. Published to npm. **Maturity:** v0.1.x — Deployments + Domains only (13 operations).
+**n8n-nodes-shipstatic** — n8n community node that exposes the ShipStatic SDK as workflow actions. Thin wrapper over `@shipstatic/ship`. Published to npm. **Maturity:** v0.2.x — Deployments + Domains (13 operations), optional credentials.
 
 ## Architecture
 
@@ -20,6 +20,7 @@ credentials/
 
 ```bash
 pnpm build          # TypeScript → dist/ (uses n8n-node build)
+pnpm test --run     # All tests (12 tests, ~200ms)
 pnpm dev            # Dev mode with hot reload (icon won't show — see Known Gotchas)
 ```
 
@@ -39,7 +40,7 @@ No HTTP calls, no auth logic, no domain validation. The SDK handles everything.
 
 | # | Resource | Operation | SDK Call |
 |---|----------|-----------|---------|
-| 1 | Deployment | Upload | `ship.deployments.upload(path, {subdomain, labels, via: 'n8n'})` |
+| 1 | Deployment | Upload | `ship.deployments.upload(path, {labels, via: 'n8n'})` — works without credentials |
 | 2 | Deployment | Get Many | `ship.deployments.list()` → fan out `.deployments` |
 | 3 | Deployment | Get | `ship.deployments.get(id)` |
 | 4 | Deployment | Update | `ship.deployments.set(id, {labels})` |
@@ -70,7 +71,7 @@ Both return empty arrays on error (user can still type manually via expression).
 
 Optional parameters are grouped into `type: 'collection'` fields named `options`, following the first-party n8n pattern:
 
-- **Upload**: Subdomain, Labels → accessed via `this.getNodeParameter('options', i) as IDataObject`
+- **Upload**: Labels → accessed via `this.getNodeParameter('options', i) as IDataObject`
 - **Domain Set**: Deployment, Labels → same pattern
 
 Required parameters (Path, Deployment ID, Domain Name, Labels for Update) remain top-level fields.
@@ -91,7 +92,11 @@ Uses n8n's standard pattern: `continueOnFail()` returns `{ error: message }` ite
 
 Labels are comma-separated strings in the UI, parsed to `string[]` by `parseLabels()`. Returns `undefined` for empty input (not empty array) to distinguish "not provided" from "clear all" per SDK conventions.
 
-### Credential
+### Optional Credentials
+
+The credential is `required: false`. Upload works without credentials (claimable deployments, 3-day TTL). All other operations require an API key.
+
+In `execute()`, `this.getCredentials('shipstaticApi')` resolves to a Ship instance via `.then()`. If no credential is configured, `.catch()` either creates a keyless Ship (upload) or throws `NodeOperationError` with guidance (all other operations).
 
 `ShipstaticApi` credential provides the API key. The `authenticate` property (Bearer header) is used by the `test` property to verify credentials — `GET /account` with the Bearer token. The SDK handles auth separately via `new Ship({ apiKey })`.
 
@@ -101,16 +106,31 @@ n8n's verification guidelines prohibit runtime dependencies in verified communit
 
 ## Testing
 
-No automated tests yet. Manual testing:
+```bash
+pnpm test --run     # All tests (12 tests, ~200ms)
+```
+
+```
+tests/
+└── Shipstatic.node.test.ts   # Business logic tests (12 tests)
+```
+
+Tests cover business logic only — not n8n framework scaffolding:
+- `parseLabels` — comma parsing, trimming, empty filtering
+- Credential resolution — with key, without key + upload, without key + other
+- Upload — `via: 'n8n'`, label forwarding
+- List slicing — returnAll vs limit
+- Void operations — `{ success: true }` convention
+- Domain set — empty string → undefined coercion
+
+### Manual Testing
 
 1. **Via `pnpm dev`** — hot-reload dev mode, icon won't render (see below), but all operations work
 2. **Via real install** — `pnpm build && npm pack`, then install the `.tgz` into `~/.n8n/custom/`
 
-To test with a real n8n install (Node 22 required):
-
 ```bash
 pnpm build && npm pack
-cd ~/.n8n/custom && npm init -y && npm install /path/to/n8n-nodes-shipstatic-0.1.0.tgz
+cd ~/.n8n/custom && npm init -y && npm install /path/to/n8n-nodes-shipstatic-0.2.0.tgz
 npx n8n
 ```
 
