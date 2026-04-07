@@ -18,7 +18,7 @@ export class ShipstaticApi implements ICredentialType {
 			typeOptions: { password: true },
 			default: '',
 			placeholder: 'ship-...',
-			description: 'Find your API key at <a href="https://my.shipstatic.com/settings">my.shipstatic.com/settings</a>',
+			description: 'Create a free API key at <a href="https://my.shipstatic.com/api-key">my.shipstatic.com/api-key</a>',
 		},
 	];
 
