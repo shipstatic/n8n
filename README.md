@@ -1,8 +1,8 @@
 # n8n-nodes-shipstatic
 
-n8n community node for [ShipStatic](https://shipstatic.com) - publish and manage static sites directly from n8n workflows.
+n8n community node for [ShipStatic](https://shipstatic.com) — free, no account needed. Deploy static websites, landing pages, and prototypes instantly from n8n workflows.
 
-ShipStatic is a simpler alternative to Vercel and Netlify, specialized for static website hosting. No build steps, no framework lock-in - just upload your files and get a live URL. Works great with sites built using AI tools like Lovable, Bolt, Cursor, and Claude.
+ShipStatic is static hosting without the complexity. No build steps, no framework lock-in — upload your files and get a live URL.
 
 ## Installation
 
@@ -22,11 +22,22 @@ npm install n8n-nodes-shipstatic
 
 Restart n8n after installing.
 
-## Authentication
+## Getting Started
 
-1. Get your API key at [my.shipstatic.com/settings](https://my.shipstatic.com/settings)
+1. Add a **ShipStatic** node to your workflow
+2. Set Resource to **Deployment**, Operation to **Upload**
+3. Enter the path to the folder with your website files
+4. Run — your site is live instantly
+
+No credentials required for deploy. Deployments without an API key are public and expire in 3 days.
+
+### API Key (optional)
+
+For permanent deployments and access to all operations:
+
+1. Get a free key at [my.shipstatic.com/api-key](https://my.shipstatic.com/api-key)
 2. In n8n, go to **Credentials > New Credential > ShipStatic API**
-3. Paste your API key and save - n8n will verify the connection automatically
+3. Paste your API key and save — n8n verifies the connection automatically
 
 ## Operations
 
@@ -34,50 +45,50 @@ Restart n8n after installing.
 
 | Operation | Description |
 |-----------|-------------|
-| **Upload** | Upload a directory and get a live URL |
-| **Get Many** | List all deployments |
-| **Get** | Get deployment details by ID |
-| **Update** | Update deployment labels |
-| **Delete** | Delete a deployment permanently |
+| **Upload** | Publish files and get a live URL instantly — no account needed |
+| **Get Many** | List all your deployed sites with their URLs, status, and labels |
+| **Get** | Get details for a specific deployment including URL, status, and file count |
+| **Update** | Update the labels on a deployment for organization and filtering |
+| **Delete** | Permanently remove a deployment and all its files |
 
 ### Domains
 
 | Operation | Description |
 |-----------|-------------|
-| **Create or Update** | Create a domain, link it to a deployment, or update labels |
-| **Get Many** | List all domains |
-| **Get** | Get domain details by name |
-| **Get DNS Records** | Get the DNS records you need to configure |
-| **Validate** | Check if a domain name is valid and available |
-| **Verify DNS** | Trigger DNS verification after configuring records |
-| **Delete** | Delete a domain permanently |
+| **Create or Update** | Connect a custom domain to your site, switch deployments, or update labels |
+| **Get Many** | List all your custom domains with their linked sites and verification status |
+| **Get** | Get details for a specific domain including its linked site and DNS status |
+| **Get DNS Records** | Get the DNS records you need to configure at your DNS provider |
+| **Validate** | Check if a domain name is valid and available before connecting it |
+| **Verify DNS** | Check if DNS is configured correctly after you set up the records |
+| **Delete** | Permanently disconnect and remove a custom domain |
 
 ### Account
 
 | Operation | Description |
 |-----------|-------------|
-| **Get** | Get current account information |
+| **Get** | Get your account details including email, plan, and usage |
 
 ## Example Workflows
 
-### Publish a site
+### Publish a site (no account needed)
 
-1. Add a **ShipStatic** node
+1. Add a **ShipStatic** node — no credential setup required
 2. Set Resource to **Deployment**, Operation to **Upload**
-3. Enter the path to your build output directory
-4. Run - you'll get back a live URL on `*.shipstatic.com`
+3. Enter the path to the folder with your website files
+4. Run — you get a live URL on `*.shipstatic.com`
 
 ### Publish and connect a custom domain
 
-1. **ShipStatic** → Upload deployment (get the deployment ID)
-2. **ShipStatic** → Create or Update domain (link your domain to the deployment)
-3. **ShipStatic** → Get DNS Records (get the records to configure)
+1. **ShipStatic** > Upload deployment (get the deployment ID)
+2. **ShipStatic** > Create or Update domain (link your domain to the deployment)
+3. **ShipStatic** > Get DNS Records (get the records to configure)
 4. Configure DNS with your provider
-5. **ShipStatic** → Verify DNS (confirm everything is connected)
+5. **ShipStatic** > Verify DNS (confirm everything is connected)
 
 ### Scheduled redeployment
 
-Use an n8n **Schedule Trigger** to redeploy a site on a recurring basis - useful for sites that pull content from external sources.
+Use an n8n **Schedule Trigger** to redeploy a site on a recurring basis — useful for sites that pull content from external sources.
 
 ## Dynamic Dropdowns
 
@@ -85,7 +96,7 @@ When selecting a deployment or domain, the node loads your existing resources as
 
 ## AI Agent Support
 
-This node works as a tool in n8n's AI Agent workflows (`usableAsTool: true`). Connect it to an AI agent and let it publish sites, manage domains, and check deployment status as part of a conversation.
+This node works as a tool in n8n's AI Agent workflows (`usableAsTool: true`). Connect it to an AI agent and let it deploy sites, manage domains, and check deployment status as part of a conversation.
 
 ## Resources
 
