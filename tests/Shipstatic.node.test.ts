@@ -155,16 +155,17 @@ describe('upload', () => {
 			resource: 'deployment', operation: 'upload',
 			binaryPropertyName: 'data', options: {},
 		});
-		ctx.helpers.assertBinaryData.mockReturnValue({ fileName: 'app.js', directory: 'assets/js' });
+		// n8n sets directory to the absolute source path — must be made relative
+		ctx.helpers.assertBinaryData.mockReturnValue({ fileName: 'app.js', directory: '/home/node/.n8n-files/dist/assets/js' });
 		ctx.helpers.getBinaryDataBuffer.mockResolvedValue(Buffer.from('console.log()'));
 
 		await node.execute.call(ctx);
 
 		expect(writeFile).toHaveBeenCalledWith(
-			'/tmp/n8n-shipstatic-test/assets/js/app.js',
+			'/tmp/n8n-shipstatic-test/home/node/.n8n-files/dist/assets/js/app.js',
 			Buffer.from('console.log()'),
 		);
-		expect(mkdir).toHaveBeenCalledWith('/tmp/n8n-shipstatic-test/assets/js', { recursive: true });
+		expect(mkdir).toHaveBeenCalledWith('/tmp/n8n-shipstatic-test/home/node/.n8n-files/dist/assets/js', { recursive: true });
 	});
 
 	it('cleans up temp directory on SDK error', async () => {
