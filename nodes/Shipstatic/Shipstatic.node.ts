@@ -9,6 +9,9 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import Ship from '@shipstatic/ship';
+import { mkdtemp, writeFile, mkdir, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import { dirname, join } from 'path';
 
 export function parseLabels(value: string): string[] | undefined {
 	if (!value) return undefined;
@@ -106,16 +109,14 @@ export class Shipstatic implements INodeType {
 
 			// === Required Parameters ===
 
-			// Deployment: path (upload)
+			// Deployment: binary field (upload)
 			{
-				displayName: 'Path',
-				name: 'path',
+				displayName: 'Input Binary Field',
+				name: 'binaryPropertyName',
 				type: 'string',
-				default: '',
-				required: true,
-				placeholder: '/path/to/your/website',
+				default: 'data',
 				displayOptions: { show: { resource: ['deployment'], operation: ['upload'] } },
-				description: 'Absolute path to the directory or file to deploy',
+				hint: 'The name of the input binary field containing the file data',
 			},
 
 			// Deployment: ID (get, update, delete)
@@ -291,18 +292,44 @@ export class Shipstatic implements INodeType {
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
+		// Upload: all input items → one deployment
+		if (resource === 'deployment' && operation === 'upload') {
+			const binaryPropertyName = this.getNodeParameter('binaryPropertyName', 0) as string;
+			const options = this.getNodeParameter('options', 0) as IDataObject;
+			const tempDir = await mkdtemp(join(tmpdir(), 'n8n-shipstatic-'));
+			try {
+				for (let i = 0; i < items.length; i++) {
+					const binaryData = this.helpers.assertBinaryData(i, binaryPropertyName);
+					const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+					const fullPath = join(tempDir, binaryData.directory || '', binaryData.fileName || `file_${i}`);
+					await mkdir(dirname(fullPath), { recursive: true });
+					await writeFile(fullPath, buffer);
+				}
+				const result = await ship.deployments.upload(tempDir, {
+					labels: parseLabels(options.labels as string),
+					via: 'n8n',
+				});
+				returnData.push({
+					json: toJson(result),
+					pairedItem: items.map((_, i) => ({ item: i })),
+				});
+			} catch (error) {
+				if (this.continueOnFail()) {
+					const message = error instanceof Error ? error.message : 'An unexpected error occurred';
+					returnData.push({ json: { error: message }, pairedItem: { item: 0 } });
+				} else {
+					throw new NodeOperationError(this.getNode(), error as Error);
+				}
+			} finally {
+				await rm(tempDir, { recursive: true, force: true });
+			}
+			return [returnData];
+		}
+
 		for (let i = 0; i < items.length; i++) {
 			try {
 				if (resource === 'deployment') {
-					if (operation === 'upload') {
-						const path = this.getNodeParameter('path', i) as string;
-						const options = this.getNodeParameter('options', i) as IDataObject;
-						const result = await ship.deployments.upload(path, {
-							labels: parseLabels(options.labels as string),
-							via: 'n8n',
-						});
-						returnData.push({ json: toJson(result), pairedItem: { item: i } });
-					} else if (operation === 'getMany') {
+					if (operation === 'getMany') {
 						const returnAll = this.getNodeParameter('returnAll', i) as boolean;
 						const response = await ship.deployments.list();
 						let results = response.deployments;

@@ -20,7 +20,7 @@ credentials/
 
 ```bash
 pnpm build          # TypeScript → dist/ (uses n8n-node build)
-pnpm test --run     # All tests (12 tests, ~200ms)
+pnpm test --run     # All tests (17 tests, ~200ms)
 pnpm dev            # Dev mode with hot reload (icon won't show — see Known Gotchas)
 ```
 
@@ -32,6 +32,7 @@ Every operation maps 1:1 to a single `@shipstatic/ship` SDK method. Same pattern
 - UI definition (resource/operation selectors, parameter fields)
 - Credential retrieval → `new Ship({ apiKey })`
 - Routing by resource + operation → SDK call
+- Binary data → temp directory materialization (upload)
 - Response shaping (list fan-out, void → `{ success: true }`)
 
 No HTTP calls, no auth logic, no domain validation. The SDK handles everything.
@@ -40,7 +41,7 @@ No HTTP calls, no auth logic, no domain validation. The SDK handles everything.
 
 | # | Resource | Operation | SDK Call |
 |---|----------|-----------|---------|
-| 1 | Deployment | Upload | `ship.deployments.upload(path, {labels, via: 'n8n'})` — works without credentials |
+| 1 | Deployment | Upload | `ship.deployments.upload(tempDir, {labels, via: 'n8n'})` — accepts binary data, works without credentials |
 | 2 | Deployment | Get Many | `ship.deployments.list()` → fan out `.deployments` |
 | 3 | Deployment | Get | `ship.deployments.get(id)` |
 | 4 | Deployment | Update | `ship.deployments.set(id, {labels})` |
@@ -54,9 +55,13 @@ No HTTP calls, no auth logic, no domain validation. The SDK handles everything.
 | 12 | Domain | Delete | `ship.domains.remove(name)` → `{success: true}` |
 | 13 | Account | Get | `ship.whoami()` |
 
+### Binary Data Upload
+
+Upload accepts binary data from upstream nodes (e.g. Read Binary Files, HTTP Request). Each input item becomes one file in the deployment — all items are collected, written to a temp directory (preserving `directory`/`fileName` from binary metadata), and deployed as a single deployment. Temp directory is cleaned up in a `finally` block. This follows n8n's standard pattern: every first-party upload node (S3, Google Drive, Slack) accepts binary data, not filesystem paths.
+
 ### pairedItem
 
-Every `returnData.push()` includes `pairedItem: { item: i }` to enable n8n's data flow tracing between nodes. List fan-outs pair all items to the input item that triggered the list call.
+Every `returnData.push()` includes `pairedItem: { item: i }` to enable n8n's data flow tracing between nodes. List fan-outs pair all items to the input item that triggered the list call. Binary upload pairs the single result to all input items.
 
 ### loadOptions (Dynamic Dropdowns)
 
@@ -74,7 +79,7 @@ Optional parameters are grouped into `type: 'collection'` fields named `options`
 - **Upload**: Labels → accessed via `this.getNodeParameter('options', i) as IDataObject`
 - **Domain Set**: Deployment, Labels → same pattern
 
-Required parameters (Path, Deployment ID, Domain Name, Labels for Update) remain top-level fields.
+Required parameters (Input Binary Field, Deployment ID, Domain Name, Labels for Update) remain top-level fields.
 
 ### Return All / Limit
 
@@ -107,18 +112,19 @@ n8n's verification guidelines prohibit runtime dependencies in verified communit
 ## Testing
 
 ```bash
-pnpm test --run     # All tests (12 tests, ~200ms)
+pnpm test --run     # All tests (17 tests, ~200ms)
 ```
 
 ```
 tests/
-└── Shipstatic.node.test.ts   # Business logic tests (12 tests)
+└── Shipstatic.node.test.ts   # Business logic tests (17 tests)
 ```
 
 Tests cover business logic only — not n8n framework scaffolding:
 - `parseLabels` — comma parsing, trimming, empty filtering
 - Credential resolution — with key, without key + upload, without key + other
-- Upload — `via: 'n8n'`, label forwarding
+- Upload — `via: 'n8n'`, label forwarding, multi-item collection, directory structure, temp cleanup on error
+- Error handling — continueOnFail for both upload (batch) and per-item operations
 - List slicing — returnAll vs limit
 - Void operations — `{ success: true }` convention
 - Domain set — empty string → undefined coercion
