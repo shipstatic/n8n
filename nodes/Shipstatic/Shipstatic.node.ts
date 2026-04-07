@@ -301,7 +301,8 @@ export class Shipstatic implements INodeType {
 				for (let i = 0; i < items.length; i++) {
 					const binaryData = this.helpers.assertBinaryData(i, binaryPropertyName);
 					const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
-					const fullPath = join(tempDir, binaryData.directory || '', binaryData.fileName || `file_${i}`);
+					const dir = (binaryData.directory || '').replace(/^\/+/, '');
+					const fullPath = join(tempDir, dir, binaryData.fileName || `file_${i}`);
 					await mkdir(dirname(fullPath), { recursive: true });
 					await writeFile(fullPath, buffer);
 				}
