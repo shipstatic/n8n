@@ -155,7 +155,7 @@ describe('upload', () => {
 			resource: 'deployment', operation: 'upload',
 			binaryPropertyName: 'data', options: {},
 		});
-		// n8n sets directory to the absolute source path — must be made relative
+		// n8n sets directory to an absolute path — leading slash is stripped for path.join safety
 		ctx.helpers.assertBinaryData.mockReturnValue({ fileName: 'app.js', directory: '/home/node/.n8n-files/dist/assets/js' });
 		ctx.helpers.getBinaryDataBuffer.mockResolvedValue(Buffer.from('console.log()'));
 
