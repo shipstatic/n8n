@@ -46,13 +46,13 @@ describe('parseLabels', () => {
 	});
 });
 
-describe('authentication — upload works with or without credentials', () => {
+describe('authentication — deploy works with or without credentials', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('with API key → permanent deployment under your account', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -68,7 +68,7 @@ describe('authentication — upload works with or without credentials', () => {
 
 	it('without API key → public deployment via agent token (expires in 3 days)', async () => {
 		const ctx = createContext(
-			{ resource: 'deployment', operation: 'upload', binaryPropertyName: 'data', options: {} },
+			{ resource: 'deployment', operation: 'deploy', binaryPropertyName: 'data', options: {} },
 			null,
 		);
 		ctx.helpers.httpRequest
@@ -85,8 +85,8 @@ describe('authentication — upload works with or without credentials', () => {
 		expect(uploadCall[0].headers.Authorization).toBe('Bearer agent-token-123');
 	});
 
-	it('non-upload operations always require an API key', async () => {
-		const ctx = createContext({ resource: 'deployment', operation: 'getMany' }, null);
+	it('non-deploy operations always require an API key', async () => {
+		const ctx = createContext({ resource: 'deployment', operation: 'list' }, null);
 
 		await expect(node.execute.call(ctx)).rejects.toThrow(
 			'This operation requires a ShipStatic API key',
@@ -94,13 +94,13 @@ describe('authentication — upload works with or without credentials', () => {
 	});
 });
 
-describe('upload', () => {
+describe('deploy', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('sends via, spa, and parsed labels in FormData', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: { labels: 'prod, v2' },
 		});
@@ -119,7 +119,7 @@ describe('upload', () => {
 	it('collects multiple items into one deployment', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -146,7 +146,7 @@ describe('upload', () => {
 	it('strips common directory prefix from paths', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -171,7 +171,7 @@ describe('upload', () => {
 	it('skips empty files', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -197,7 +197,7 @@ describe('upload', () => {
 		const { createHash } = await import('node:crypto');
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -213,10 +213,10 @@ describe('upload', () => {
 		expect(checksums).toEqual([expectedMd5]);
 	});
 
-	it('single file upload preserves path without stripping', async () => {
+	it('single file deploy preserves path without stripping', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -237,7 +237,7 @@ describe('upload', () => {
 	it('throws when all files are empty', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -249,7 +249,7 @@ describe('upload', () => {
 	it('returns error item when continueOnFail is enabled', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'upload',
+			operation: 'deploy',
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -266,7 +266,7 @@ describe('list operations', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('returns all items when returnAll is true', async () => {
-		const ctx = createContext({ resource: 'deployment', operation: 'getMany', returnAll: true });
+		const ctx = createContext({ resource: 'deployment', operation: 'list', returnAll: true });
 		ctx.helpers.httpRequestWithAuthentication.mockResolvedValue({
 			deployments: [{ deployment: 'a' }, { deployment: 'b' }, { deployment: 'c' }],
 		});
@@ -279,7 +279,7 @@ describe('list operations', () => {
 	it('slices to limit when returnAll is false', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'getMany',
+			operation: 'list',
 			returnAll: false,
 			limit: 2,
 		});
@@ -293,13 +293,13 @@ describe('list operations', () => {
 	});
 });
 
-describe('deployment update', () => {
+describe('deployment set', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('clears labels when input is empty', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'update',
+			operation: 'set',
 			deploymentId: 'test.shipstatic.com',
 			labels: '',
 		});
@@ -316,10 +316,10 @@ describe('deployment update', () => {
 describe('void operations', () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it('returns { success: true } for delete', async () => {
+	it('returns { success: true } for remove', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
-			operation: 'delete',
+			operation: 'remove',
 			deploymentId: 'test.shipstatic.com',
 		});
 		ctx.helpers.httpRequestWithAuthentication.mockResolvedValue(undefined);

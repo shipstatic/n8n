@@ -33,30 +33,32 @@ Every operation is a direct HTTP call to `https://api.shipstatic.com`. Zero runt
 - UI definition (resource/operation selectors, parameter fields)
 - Credential retrieval → Bearer token header
 - Routing by resource + operation → HTTP call via `httpRequestWithAuthentication`
-- Binary data → FormData multipart upload (using Web API globals)
+- Binary data → FormData multipart deploy (using Web API globals)
 - Response shaping (list fan-out, void → `{ success: true }`)
 
 ### Operations (13 total)
 
-| #   | Resource   | Operation        | HTTP Call                                              |
-| --- | ---------- | ---------------- | ------------------------------------------------------ |
-| 1   | Deployment | Upload           | `POST /deployments` multipart FormData (optional auth) |
-| 2   | Deployment | Get Many         | `GET /deployments` → fan out `.deployments`            |
-| 3   | Deployment | Get              | `GET /deployments/{id}`                                |
-| 4   | Deployment | Update           | `PATCH /deployments/{id}` body `{labels}`              |
-| 5   | Deployment | Delete           | `DELETE /deployments/{id}` → `{success: true}`         |
-| 6   | Domain     | Create or Update | `PUT /domains/{name}` body `{deployment?, labels?}`    |
-| 7   | Domain     | Get Many         | `GET /domains` → fan out `.domains`                    |
-| 8   | Domain     | Get              | `GET /domains/{name}`                                  |
-| 9   | Domain     | Get DNS Records  | `GET /domains/{name}/records`                          |
-| 10  | Domain     | Validate         | `POST /domains/validate` body `{domain: name}`         |
-| 11  | Domain     | Verify DNS       | `POST /domains/{name}/verify`                          |
-| 12  | Domain     | Delete           | `DELETE /domains/{name}` → `{success: true}`           |
-| 13  | Account    | Get              | `GET /account`                                         |
+Operation names match the CLI and MCP verbs: deploy, get, list, set, remove, records, validate, verify.
 
-### Binary Data Upload
+| #   | Resource   | Operation | HTTP Call                                              |
+| --- | ---------- | --------- | ------------------------------------------------------ |
+| 1   | Deployment | Deploy    | `POST /deployments` multipart FormData (optional auth) |
+| 2   | Deployment | Get       | `GET /deployments/{id}`                                |
+| 3   | Deployment | List      | `GET /deployments` → fan out `.deployments`            |
+| 4   | Deployment | Remove    | `DELETE /deployments/{id}` → `{success: true}`         |
+| 5   | Deployment | Set       | `PATCH /deployments/{id}` body `{labels}`              |
+| 6   | Domain     | Get       | `GET /domains/{name}`                                  |
+| 7   | Domain     | List      | `GET /domains` → fan out `.domains`                    |
+| 8   | Domain     | Records   | `GET /domains/{name}/records`                          |
+| 9   | Domain     | Remove    | `DELETE /domains/{name}` → `{success: true}`           |
+| 10  | Domain     | Set       | `PUT /domains/{name}` body `{deployment?, labels?}`    |
+| 11  | Domain     | Validate  | `POST /domains/validate` body `{domain: name}`         |
+| 12  | Domain     | Verify    | `POST /domains/{name}/verify`                          |
+| 13  | Account    | Get       | `GET /account`                                         |
 
-Upload uses Web API `FormData` and `File` globals (Node 22+, no imports needed — passes n8n Cloud ESLint scanner). Each input item becomes one file in the deployment. All items are collected into a single `FormData`, with paths built from `binaryData.directory` + `binaryData.fileName`. Common directory prefixes are stripped for clean deployment URLs.
+### Deploy — Binary Data + FormData
+
+Deploy uses Web API `FormData` and `File` globals (Node 22+, no imports needed — passes n8n Cloud ESLint scanner). Each input item becomes one file in the deployment. All items are collected into a single `FormData`, with paths built from `binaryData.directory` + `binaryData.fileName`. Common directory prefixes are stripped for clean deployment URLs.
 
 The multipart body includes:
 
@@ -66,13 +68,15 @@ The multipart body includes:
 - `spa` — always `"true"` (server-side SPA detection)
 - `labels` — optional JSON array
 
-### Upload Auth — Optional Credentials
+### Deploy Auth — Optional Credentials
 
-Upload works without credentials. When no API key is configured, the node fetches a short-lived agent token from `POST /tokens/agent` and uses that as the Bearer token. All other operations require an API key and use `httpRequestWithAuthentication`.
+Deploy works without credentials. When no API key is configured, the node fetches a short-lived agent token from `POST /tokens/agent` and uses that as the Bearer token. All other operations require an API key and use `httpRequestWithAuthentication`.
+
+The `handleDeploy` function is extracted from `execute()` to satisfy the `no-http-request-with-manual-auth` ESLint rule — `getCredentials` and `httpRequest` must be in separate function scopes.
 
 ### pairedItem
 
-Every `returnData.push()` includes `pairedItem: { item: i }` to enable n8n's data flow tracing between nodes. List fan-outs pair all items to the input item that triggered the list call. Binary upload pairs the single result to all input items.
+Every `returnData.push()` includes `pairedItem: { item: i }` to enable n8n's data flow tracing between nodes. List fan-outs pair all items to the input item that triggered the list call. Deploy pairs the single result to all input items.
 
 ### loadOptions (Dynamic Dropdowns)
 
@@ -87,12 +91,12 @@ Both return empty arrays on error (user can still type manually via expression).
 
 Optional parameters are grouped into `type: 'collection'` fields named `options`:
 
-- **Upload**: Labels → accessed via `this.getNodeParameter('options', i) as IDataObject`
+- **Deploy**: Labels → accessed via `this.getNodeParameter('options', i) as IDataObject`
 - **Domain Set**: Deployment, Labels → same pattern
 
 ### Return All / Limit
 
-Both "Get Many" operations include `returnAll` (boolean) and `limit` (number). Client-side slicing via `.slice(0, limit)` — the API doesn't paginate.
+Both List operations include `returnAll` (boolean) and `limit` (number). Client-side slicing via `.slice(0, limit)` — the API doesn't paginate.
 
 ### Error Handling
 
@@ -111,10 +115,11 @@ pnpm test --run     # All tests (~200ms)
 Tests mock `helpers.httpRequest` and `helpers.httpRequestWithAuthentication` — no real HTTP calls. Coverage:
 
 - `parseLabels` — comma parsing, trimming, empty filtering
-- Credential resolution — with key, without key + upload (agent token), without key + other (error)
-- Upload — FormData fields (via, spa, labels), multi-item collection, path optimization, empty file skip, error handling
-- List slicing — returnAll vs limit
-- Void operations — `{ success: true }` convention
+- Authentication — with key, without key + deploy (agent token), without key + other (error)
+- Deploy — FormData fields (via, spa, labels), multi-item collection, path optimization, empty file skip, checksums, error handling
+- List — returnAll vs limit
+- Set — labels coercion
+- Remove — `{ success: true }` convention
 - Domain set — empty string → undefined coercion
 
 ## Adding New Operations
