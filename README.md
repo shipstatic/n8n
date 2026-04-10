@@ -24,7 +24,7 @@ Restart n8n after installing.
 
 Add a **ShipStatic** node to your workflow. No credentials to configure.
 
-1. Set Resource to **Deployment**, Operation to **Upload**
+1. Set Resource to **Deployment**, Operation to **Deploy**
 2. Connect binary files from an upstream node (e.g. Read Binary Files, HTTP Request)
 3. Run — you get a live, shareable URL on `*.shipstatic.com`
 
@@ -42,25 +42,25 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 ### Deployments
 
-| Operation    | Description                                                                 |
-| ------------ | --------------------------------------------------------------------------- |
-| **Upload**   | Publish files and get a live URL instantly                                  |
-| **Get Many** | List all your deployed sites with their URLs, status, and labels            |
-| **Get**      | Get details for a specific deployment including URL, status, and file count |
-| **Update**   | Update the labels on a deployment for organization and filtering            |
-| **Delete**   | Permanently remove a deployment and all its files                           |
+| Operation  | Description                                                                |
+| ---------- | -------------------------------------------------------------------------- |
+| **Deploy** | Publish files and get a live URL instantly                                 |
+| **Get**    | Get deployment details including URL, status, file count, size, and labels |
+| **List**   | List all deployments with their URLs, status, and labels                   |
+| **Remove** | Permanently remove a deployment and all its files                          |
+| **Set**    | Update the labels on a deployment for organization and filtering           |
 
 ### Domains
 
-| Operation            | Description                                                                  |
-| -------------------- | ---------------------------------------------------------------------------- |
-| **Create or Update** | Connect a custom domain to your site, switch deployments, or update labels   |
-| **Get Many**         | List all your custom domains with their linked sites and verification status |
-| **Get**              | Get details for a specific domain including its linked site and DNS status   |
-| **Get DNS Records**  | Get the DNS records you need to configure at your DNS provider               |
-| **Validate**         | Check if a domain name is valid and available before connecting it           |
-| **Verify DNS**       | Check if DNS is configured correctly after you set up the records            |
-| **Delete**           | Permanently disconnect and remove a custom domain                            |
+| Operation    | Description                                                                   |
+| ------------ | ----------------------------------------------------------------------------- |
+| **Get**      | Get domain details including linked deployment, verification status, and labels |
+| **List**     | List all domains with their linked deployments and verification status         |
+| **Records**  | Get the DNS records you need to configure at your DNS provider                |
+| **Remove**   | Permanently disconnect and remove a custom domain                             |
+| **Set**      | Connect a custom domain to your site, switch deployments, or update labels    |
+| **Validate** | Check if a domain name is valid and available before connecting it            |
+| **Verify**   | Check if DNS is configured correctly after you set up the records             |
 
 ### Account
 
@@ -72,11 +72,11 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 ### Publish and connect a custom domain
 
-1. **ShipStatic** > Upload deployment (get the deployment ID)
-2. **ShipStatic** > Create or Update domain (link your domain to the deployment)
-3. **ShipStatic** > Get DNS Records (get the records to configure)
+1. **ShipStatic** > Deployment: Deploy (get the deployment ID)
+2. **ShipStatic** > Domain: Set (link your domain to the deployment)
+3. **ShipStatic** > Domain: Records (get the records to configure)
 4. Configure DNS with your provider
-5. **ShipStatic** > Verify DNS (confirm everything is connected)
+5. **ShipStatic** > Domain: Verify (confirm everything is connected)
 
 ### Scheduled redeployment
 
