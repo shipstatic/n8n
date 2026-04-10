@@ -193,6 +193,59 @@ describe('upload', () => {
 		expect(fileEntries[0].name).toBe('real.html');
 	});
 
+	it('sends correct MD5 checksums for each file', async () => {
+		const { createHash } = await import('node:crypto');
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'upload',
+			binaryPropertyName: 'data',
+			options: {},
+		});
+		const content = Buffer.from('<html></html>');
+		const expectedMd5 = createHash('md5').update(content).digest('hex');
+
+		await node.execute.call(ctx);
+
+		const form = ctx.helpers.httpRequest.mock.calls.find(
+			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
+		)[0].body as FormData;
+		const checksums = JSON.parse(form.get('checksums') as string);
+		expect(checksums).toEqual([expectedMd5]);
+	});
+
+	it('single file upload preserves path without stripping', async () => {
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'upload',
+			binaryPropertyName: 'data',
+			options: {},
+		});
+		ctx.helpers.assertBinaryData.mockReturnValue({
+			fileName: 'index.html',
+			directory: 'dist',
+		});
+
+		await node.execute.call(ctx);
+
+		const form = ctx.helpers.httpRequest.mock.calls.find(
+			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
+		)[0].body as FormData;
+		const fileEntries = form.getAll('files[]') as File[];
+		expect(fileEntries[0].name).toBe('dist/index.html');
+	});
+
+	it('throws when all files are empty', async () => {
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'upload',
+			binaryPropertyName: 'data',
+			options: {},
+		});
+		ctx.helpers.getBinaryDataBuffer.mockResolvedValue(Buffer.alloc(0));
+
+		await expect(node.execute.call(ctx)).rejects.toThrow('No files to deploy');
+	});
+
 	it('returns error item when continueOnFail is enabled', async () => {
 		const ctx = createContext({
 			resource: 'deployment',

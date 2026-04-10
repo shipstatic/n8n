@@ -51,6 +51,10 @@ async function handleUpload(
 		});
 	}
 
+	if (files.length === 0) {
+		throw new NodeOperationError(ctx.getNode(), 'No files to deploy — all input items were empty');
+	}
+
 	// 2. Optimize paths — strip common directory prefix
 	if (files.length > 1) {
 		const segments = files.map((f) => f.path.replace(/\\/g, '/').split('/'));
