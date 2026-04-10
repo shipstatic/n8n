@@ -137,7 +137,16 @@ async function handleDeploy(
 		url: `${API}/deployments`,
 		body,
 		headers: { Authorization: authorization, 'Content-Type': contentType } as IDataObject,
+		ignoreHttpStatusErrors: true,
 	});
+
+	// Surface API errors with details
+	if (result.error || result.message) {
+		throw new NodeOperationError(
+			ctx.getNode(),
+			`Deploy failed: ${result.message || result.error}`,
+		);
+	}
 
 	return [
 		{
