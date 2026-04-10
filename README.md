@@ -1,8 +1,6 @@
 # n8n-nodes-shipstatic
 
-n8n community node for [ShipStatic](https://shipstatic.com) — free, no account needed. Deploy static websites, landing pages, and prototypes instantly from n8n workflows.
-
-ShipStatic is static hosting without the complexity. No build steps, no framework lock-in — upload your files and get a live URL.
+n8n community node for [ShipStatic](https://shipstatic.com) — deploy static websites, landing pages, and prototypes instantly from n8n workflows.
 
 ## Installation
 
@@ -22,30 +20,31 @@ npm install n8n-nodes-shipstatic
 
 Restart n8n after installing.
 
-## Getting Started
+## Deploy — Free, No Account Needed
 
-1. Add a **ShipStatic** node to your workflow
-2. Set Resource to **Deployment**, Operation to **Upload**
-3. Enter the path to the folder with your website files
-4. Run — your site is live instantly
+Add a **ShipStatic** node to your workflow. No credentials to configure.
 
-No credentials required for deploy. Deployments without an API key are public and expire in 3 days.
+1. Set Resource to **Deployment**, Operation to **Upload**
+2. Connect binary files from an upstream node (e.g. Read Binary Files, HTTP Request)
+3. Run — you get a live, shareable URL on `*.shipstatic.com`
 
-### API Key (optional)
+That's it. Your site is live instantly. No sign-up, no API key, no configuration.
 
-For permanent deployments and access to all operations:
+Deployments without an API key are public and expire in 3 days.
+
+## All Operations — Free API Key
+
+For permanent deployments and full control over your sites and domains, add a free API key:
 
 1. Get a free key at [my.shipstatic.com/api-key](https://my.shipstatic.com/api-key)
 2. In n8n, go to **Credentials > New Credential > ShipStatic API**
 3. Paste your API key and save — n8n verifies the connection automatically
 
-## Operations
-
 ### Deployments
 
 | Operation | Description |
 |-----------|-------------|
-| **Upload** | Publish files and get a live URL instantly — no account needed |
+| **Upload** | Publish files and get a live URL instantly |
 | **Get Many** | List all your deployed sites with their URLs, status, and labels |
 | **Get** | Get details for a specific deployment including URL, status, and file count |
 | **Update** | Update the labels on a deployment for organization and filtering |
@@ -71,13 +70,6 @@ For permanent deployments and access to all operations:
 
 ## Example Workflows
 
-### Publish a site (no account needed)
-
-1. Add a **ShipStatic** node — no credential setup required
-2. Set Resource to **Deployment**, Operation to **Upload**
-3. Enter the path to the folder with your website files
-4. Run — you get a live URL on `*.shipstatic.com`
-
 ### Publish and connect a custom domain
 
 1. **ShipStatic** > Upload deployment (get the deployment ID)
@@ -102,7 +94,7 @@ This node works as a tool in n8n's AI Agent workflows (`usableAsTool: true`). Co
 
 - [ShipStatic Documentation](https://docs.shipstatic.com)
 - [ShipStatic Dashboard](https://my.shipstatic.com)
-- [Report an Issue](https://github.com/shipstatic/node/issues)
+- [Report an Issue](https://github.com/shipstatic/n8n/issues)
 
 ## License
 
