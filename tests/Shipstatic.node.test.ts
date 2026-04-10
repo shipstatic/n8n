@@ -53,6 +53,7 @@ describe('authentication — deploy works with or without credentials', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -68,7 +69,13 @@ describe('authentication — deploy works with or without credentials', () => {
 
 	it('without API key → public deployment via agent token (expires in 3 days)', async () => {
 		const ctx = createContext(
-			{ resource: 'deployment', operation: 'deploy', binaryPropertyName: 'data', options: {} },
+			{
+				resource: 'deployment',
+				operation: 'deploy',
+				binaryData: true,
+				binaryPropertyName: 'data',
+				options: {},
+			},
 			null,
 		);
 		ctx.helpers.httpRequest
@@ -101,6 +108,7 @@ describe('deploy', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: { labels: 'prod, v2' },
 		});
@@ -120,6 +128,7 @@ describe('deploy', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -147,6 +156,7 @@ describe('deploy', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -172,6 +182,7 @@ describe('deploy', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -198,6 +209,7 @@ describe('deploy', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -217,6 +229,7 @@ describe('deploy', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -238,6 +251,7 @@ describe('deploy', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -250,6 +264,7 @@ describe('deploy', () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
+			binaryData: true,
 			binaryPropertyName: 'data',
 			options: {},
 		});
@@ -259,6 +274,27 @@ describe('deploy', () => {
 		const [results] = await node.execute.call(ctx);
 
 		expect(results[0].json).toEqual({ error: 'Upload failed' });
+	});
+
+	it('text mode deploys fileContent with specified fileName', async () => {
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'deploy',
+			binaryData: false,
+			fileContent: '<html><body>Hello</body></html>',
+			fileName: 'index.html',
+			options: {},
+		});
+
+		await node.execute.call(ctx);
+
+		const form = ctx.helpers.httpRequest.mock.calls.find(
+			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
+		)[0].body as FormData;
+		const fileEntries = form.getAll('files[]') as File[];
+		expect(fileEntries).toHaveLength(1);
+		expect(fileEntries[0].name).toBe('index.html');
+		expect(form.get('via')).toBe('n8n');
 	});
 });
 

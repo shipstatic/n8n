@@ -56,13 +56,16 @@ Operation names match the CLI and MCP verbs: deploy, get, list, set, remove, rec
 | 12  | Domain     | Verify    | `POST /domains/{name}/verify`                          |
 | 13  | Account    | Get       | `GET /account`                                         |
 
-### Deploy — Binary Data + FormData
+### Deploy — Two Input Modes
 
-Deploy uses Web API `FormData` and `File` globals (Node 22+, no imports needed — passes n8n Cloud ESLint scanner). Each input item becomes one file in the deployment. All items are collected into a single `FormData`, with paths built from `binaryData.directory` + `binaryData.fileName`. Common directory prefixes are stripped for clean deployment URLs.
+Deploy has a **Binary File** toggle (matching the S3 node pattern):
 
-The multipart body includes:
+- **Binary File ON** (default): reads files from binary data. Each input item becomes one file. Paths built from `binaryData.directory` + `binaryData.fileName`. Common directory prefixes are stripped for clean deployment URLs.
+- **Binary File OFF**: takes text content + file name directly. Defaults to `index.html`. Single file deploy.
 
-- `files[]` — one File entry per binary item
+Both modes use Web API `FormData` and `File` globals (Node 22+, no imports needed — passes n8n Cloud ESLint scanner). The multipart body includes:
+
+- `files[]` — one File entry per item (or one from text content)
 - `checksums` — JSON array of MD5 hashes (via `node:crypto`)
 - `via` — always `"n8n"`
 - `spa` — always `"true"` (server-side SPA detection)
@@ -116,7 +119,8 @@ Tests mock `helpers.httpRequest` and `helpers.httpRequestWithAuthentication` —
 
 - `parseLabels` — comma parsing, trimming, empty filtering
 - Authentication — with key, without key + deploy (agent token), without key + other (error)
-- Deploy — FormData fields (via, spa, labels), multi-item collection, path optimization, empty file skip, checksums, error handling
+- Deploy binary mode — FormData fields (via, spa, labels), multi-item collection, path optimization, empty file skip, checksums, error handling
+- Deploy text mode — fileContent + fileName → single file deploy
 - List — returnAll vs limit
 - Set — labels coercion
 - Remove — `{ success: true }` convention
