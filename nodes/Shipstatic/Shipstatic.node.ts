@@ -115,7 +115,9 @@ async function handleDeploy(
 		method: 'POST',
 		url: `${API}/deployments`,
 		body: form,
-		headers: { Authorization: authorization } as IDataObject,
+		// Content-Type must be empty — lets axios set the multipart boundary automatically.
+		// Without this, n8n defaults to application/json which breaks FormData encoding.
+		headers: { Authorization: authorization, 'Content-Type': '' } as IDataObject,
 	});
 
 	return [
