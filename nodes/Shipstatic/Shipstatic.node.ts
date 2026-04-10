@@ -132,20 +132,21 @@ async function handleDeploy(
 	}
 
 	// 5. Deploy
-	const result = await ctx.helpers.httpRequest({
-		method: 'POST',
-		url: `${API}/deployments`,
-		body,
-		headers: { Authorization: authorization, 'Content-Type': contentType } as IDataObject,
-		ignoreHttpStatusErrors: true,
-	});
-
-	// Surface API errors with details
-	if (result.error || result.message) {
-		throw new NodeOperationError(
-			ctx.getNode(),
-			`Deploy failed: ${result.message || result.error}`,
-		);
+	let result: IDataObject;
+	try {
+		result = await ctx.helpers.httpRequest({
+			method: 'POST',
+			url: `${API}/deployments`,
+			body,
+			headers: { Authorization: authorization, 'Content-Type': contentType } as IDataObject,
+		});
+	} catch (error: unknown) {
+		// Surface API error details
+		const axiosError = error as { response?: { data?: unknown }; message?: string };
+		const detail = axiosError.response?.data
+			? JSON.stringify(axiosError.response.data)
+			: axiosError.message || 'Unknown error';
+		throw new NodeOperationError(ctx.getNode(), `Deploy failed: ${detail}`);
 	}
 
 	return [
