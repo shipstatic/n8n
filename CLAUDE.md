@@ -63,7 +63,7 @@ Deploy has a **Binary File** toggle (matching the S3 node pattern):
 - **Binary File ON** (default): reads files from binary data. Each input item becomes one file. Paths built from `binaryData.directory` + `binaryData.fileName`. Common directory prefixes are stripped for clean deployment URLs.
 - **Binary File OFF**: takes text content + file name directly. Defaults to `index.html`. Single file deploy.
 
-Both modes use a manual multipart body builder (`buildMultipart`) that constructs the `multipart/form-data` Buffer directly using `node:crypto` for boundary generation. This avoids dependency on Web API FormData which n8n's httpRequest handler doesn't pass through correctly to axios. The multipart body includes:
+Both modes use n8n's `request` helper with the `formData` option — the same proven pattern used by Slack, S3, and Google Drive for multipart file uploads. The formData includes:
 
 - `files[]` — one File entry per item (or one from text content)
 - `checksums` — JSON array of MD5 hashes (via `node:crypto`)
@@ -75,7 +75,7 @@ Both modes use a manual multipart body builder (`buildMultipart`) that construct
 
 Deploy works without credentials. When no API key is configured, the node fetches a short-lived agent token from `POST /tokens/agent` and uses that as the Bearer token. All other operations require an API key and use `httpRequestWithAuthentication`.
 
-The `handleDeploy` function is extracted from `execute()` to satisfy the `no-http-request-with-manual-auth` ESLint rule — `getCredentials` and `httpRequest` must be in separate function scopes.
+The `handleDeploy` function uses `request` (with `formData`) for both the agent token and deploy calls. It's extracted from `execute()` to keep credential resolution (`getCredentials`) separate from request logic.
 
 ### pairedItem
 
