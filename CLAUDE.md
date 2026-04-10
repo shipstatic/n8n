@@ -63,7 +63,7 @@ Deploy has a **Binary File** toggle (matching the S3 node pattern):
 - **Binary File ON** (default): reads files from binary data. Each input item becomes one file. Paths built from `binaryData.directory` + `binaryData.fileName`. Common directory prefixes are stripped for clean deployment URLs.
 - **Binary File OFF**: takes text content + file name directly. Defaults to `index.html`. Single file deploy.
 
-Both modes use Web API `FormData` and `File` globals (Node 22+, no imports needed — passes n8n Cloud ESLint scanner). The multipart body includes:
+Both modes use a manual multipart body builder (`buildMultipart`) that constructs the `multipart/form-data` Buffer directly using `node:crypto` for boundary generation. This avoids dependency on Web API FormData which n8n's httpRequest handler doesn't pass through correctly to axios. The multipart body includes:
 
 - `files[]` — one File entry per item (or one from text content)
 - `checksums` — JSON array of MD5 hashes (via `node:crypto`)

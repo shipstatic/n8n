@@ -30,6 +30,17 @@ function createContext(params: Record<string, any>, credentials?: Record<string,
 	} as any;
 }
 
+/** Parse the multipart Buffer body from an httpRequest call to inspect fields and files. */
+function parseMultipart(call: any): { body: string; contentType: string } {
+	return { body: call[0].body.toString('utf-8'), contentType: call[0].headers['Content-Type'] };
+}
+
+function findDeployCall(ctx: any): any {
+	return ctx.helpers.httpRequest.mock.calls.find(
+		(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
+	);
+}
+
 const node = new Shipstatic();
 
 describe('parseLabels', () => {
@@ -60,11 +71,9 @@ describe('authentication — deploy works with or without credentials', () => {
 
 		await node.execute.call(ctx);
 
-		const uploadCall = ctx.helpers.httpRequest.mock.calls.find(
-			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
-		);
-		expect(uploadCall).toBeDefined();
-		expect(uploadCall[0].headers.Authorization).toBe('Bearer ship-test');
+		const call = findDeployCall(ctx);
+		expect(call).toBeDefined();
+		expect(call[0].headers.Authorization).toBe('Bearer ship-test');
 	});
 
 	it('without API key → public deployment via agent token (expires in 3 days)', async () => {
@@ -88,8 +97,8 @@ describe('authentication — deploy works with or without credentials', () => {
 		expect(agentCall[0].url).toContain('/tokens/agent');
 		expect(agentCall[0].method).toBe('POST');
 
-		const uploadCall = ctx.helpers.httpRequest.mock.calls[1];
-		expect(uploadCall[0].headers.Authorization).toBe('Bearer agent-token-123');
+		const deployCall = ctx.helpers.httpRequest.mock.calls[1];
+		expect(deployCall[0].headers.Authorization).toBe('Bearer agent-token-123');
 	});
 
 	it('non-deploy operations always require an API key', async () => {
@@ -104,7 +113,7 @@ describe('authentication — deploy works with or without credentials', () => {
 describe('deploy', () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it('sends via, spa, and parsed labels in FormData', async () => {
+	it('sends via, spa, and parsed labels in multipart body', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'deploy',
@@ -115,13 +124,11 @@ describe('deploy', () => {
 
 		await node.execute.call(ctx);
 
-		const uploadCall = ctx.helpers.httpRequest.mock.calls.find(
-			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
-		);
-		const form = uploadCall[0].body as FormData;
-		expect(form.get('via')).toBe('n8n');
-		expect(form.get('spa')).toBe('true');
-		expect(form.get('labels')).toBe('["prod","v2"]');
+		const { body, contentType } = parseMultipart(findDeployCall(ctx));
+		expect(contentType).toContain('multipart/form-data; boundary=');
+		expect(body).toContain('name="via"\r\n\r\nn8n');
+		expect(body).toContain('name="spa"\r\n\r\ntrue');
+		expect(body).toContain('name="labels"\r\n\r\n["prod","v2"]');
 	});
 
 	it('collects multiple items into one deployment', async () => {
@@ -143,13 +150,9 @@ describe('deploy', () => {
 		const [results] = await node.execute.call(ctx);
 
 		expect(results).toHaveLength(1);
-		const form = ctx.helpers.httpRequest.mock.calls.find((c: any[]) =>
-			c[0].url?.endsWith('/deployments'),
-		)[0].body as FormData;
-		const fileEntries = form.getAll('files[]') as File[];
-		expect(fileEntries).toHaveLength(2);
-		expect(fileEntries[0].name).toBe('index.html');
-		expect(fileEntries[1].name).toBe('css/style.css');
+		const { body } = parseMultipart(findDeployCall(ctx));
+		expect(body).toContain('filename="index.html"');
+		expect(body).toContain('filename="css/style.css"');
 	});
 
 	it('strips common directory prefix from paths', async () => {
@@ -170,12 +173,10 @@ describe('deploy', () => {
 
 		await node.execute.call(ctx);
 
-		const form = ctx.helpers.httpRequest.mock.calls.find((c: any[]) =>
-			c[0].url?.endsWith('/deployments'),
-		)[0].body as FormData;
-		const fileEntries = form.getAll('files[]') as File[];
-		expect(fileEntries[0].name).toBe('index.html');
-		expect(fileEntries[1].name).toBe('assets/app.js');
+		const { body } = parseMultipart(findDeployCall(ctx));
+		expect(body).toContain('filename="index.html"');
+		expect(body).toContain('filename="assets/app.js"');
+		expect(body).not.toContain('filename="dist/');
 	});
 
 	it('skips empty files', async () => {
@@ -196,12 +197,9 @@ describe('deploy', () => {
 
 		await node.execute.call(ctx);
 
-		const form = ctx.helpers.httpRequest.mock.calls.find((c: any[]) =>
-			c[0].url?.endsWith('/deployments'),
-		)[0].body as FormData;
-		const fileEntries = form.getAll('files[]') as File[];
-		expect(fileEntries).toHaveLength(1);
-		expect(fileEntries[0].name).toBe('real.html');
+		const { body } = parseMultipart(findDeployCall(ctx));
+		expect(body).toContain('filename="real.html"');
+		expect(body).not.toContain('filename="empty.txt"');
 	});
 
 	it('sends correct MD5 checksums for each file', async () => {
@@ -218,11 +216,8 @@ describe('deploy', () => {
 
 		await node.execute.call(ctx);
 
-		const form = ctx.helpers.httpRequest.mock.calls.find(
-			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
-		)[0].body as FormData;
-		const checksums = JSON.parse(form.get('checksums') as string);
-		expect(checksums).toEqual([expectedMd5]);
+		const { body } = parseMultipart(findDeployCall(ctx));
+		expect(body).toContain(`["${expectedMd5}"]`);
 	});
 
 	it('single file deploy preserves path without stripping', async () => {
@@ -240,11 +235,8 @@ describe('deploy', () => {
 
 		await node.execute.call(ctx);
 
-		const form = ctx.helpers.httpRequest.mock.calls.find(
-			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
-		)[0].body as FormData;
-		const fileEntries = form.getAll('files[]') as File[];
-		expect(fileEntries[0].name).toBe('dist/index.html');
+		const { body } = parseMultipart(findDeployCall(ctx));
+		expect(body).toContain('filename="dist/index.html"');
 	});
 
 	it('throws when all files are empty', async () => {
@@ -288,13 +280,10 @@ describe('deploy', () => {
 
 		await node.execute.call(ctx);
 
-		const form = ctx.helpers.httpRequest.mock.calls.find(
-			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
-		)[0].body as FormData;
-		const fileEntries = form.getAll('files[]') as File[];
-		expect(fileEntries).toHaveLength(1);
-		expect(fileEntries[0].name).toBe('index.html');
-		expect(form.get('via')).toBe('n8n');
+		const { body } = parseMultipart(findDeployCall(ctx));
+		expect(body).toContain('filename="index.html"');
+		expect(body).toContain('<html><body>Hello</body></html>');
+		expect(body).toContain('name="via"\r\n\r\nn8n');
 	});
 });
 

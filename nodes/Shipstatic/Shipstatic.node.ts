@@ -8,12 +8,38 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 const API = 'https://api.shipstatic.com';
 
 function md5(buf: Buffer): string {
 	return createHash('md5').update(buf).digest('hex');
+}
+
+function buildMultipart(
+	files: { path: string; content: Buffer; md5: string }[],
+	fields: Record<string, string>,
+): { body: Buffer; contentType: string } {
+	const boundary = '----n8n' + randomBytes(16).toString('hex');
+	const parts: Buffer[] = [];
+	for (const f of files) {
+		parts.push(
+			Buffer.from(
+				`--${boundary}\r\nContent-Disposition: form-data; name="files[]"; filename="${f.path}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+			),
+		);
+		parts.push(f.content);
+		parts.push(Buffer.from('\r\n'));
+	}
+	for (const [name, value] of Object.entries(fields)) {
+		parts.push(
+			Buffer.from(
+				`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
+			),
+		);
+	}
+	parts.push(Buffer.from(`--${boundary}--\r\n`));
+	return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
 export function parseLabels(value: string): string[] | undefined {
@@ -80,20 +106,15 @@ async function handleDeploy(
 		}
 	}
 
-	// 3. Build multipart body using Web API FormData
-	const form = new FormData();
-	for (const f of files) {
-		form.append(
-			'files[]',
-			// Uint8Array wrap: Buffer is not assignable to BlobPart in strict TS
-			new File([new Uint8Array(f.content)], f.path, { type: 'application/octet-stream' }),
-		);
-	}
-	form.append('checksums', JSON.stringify(files.map((f) => f.md5)));
-	form.append('via', 'n8n');
-	form.append('spa', 'true'); // server-side SPA detection + rewrite config
+	// 3. Build multipart body
 	const labels = parseLabels(options.labels as string);
-	if (labels) form.append('labels', JSON.stringify(labels));
+	const fields: Record<string, string> = {
+		checksums: JSON.stringify(files.map((f) => f.md5)),
+		via: 'n8n',
+		spa: 'true', // server-side SPA detection + rewrite config
+	};
+	if (labels) fields.labels = JSON.stringify(labels);
+	const { body, contentType } = buildMultipart(files, fields);
 
 	// 4. Resolve auth — API key for permanent deploys, agent token for public/temporary
 	let authorization: string;
@@ -114,10 +135,8 @@ async function handleDeploy(
 	const result = await ctx.helpers.httpRequest({
 		method: 'POST',
 		url: `${API}/deployments`,
-		body: form,
-		// Content-Type must be empty — lets axios set the multipart boundary automatically.
-		// Without this, n8n defaults to application/json which breaks FormData encoding.
-		headers: { Authorization: authorization, 'Content-Type': '' } as IDataObject,
+		body,
+		headers: { Authorization: authorization, 'Content-Type': contentType } as IDataObject,
 	});
 
 	return [
