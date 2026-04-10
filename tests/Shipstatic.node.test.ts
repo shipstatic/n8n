@@ -14,25 +14,31 @@ vi.mock('n8n-workflow', () => ({
 
 // Mock Ship SDK
 vi.mock('@shipstatic/ship', () => ({
-	default: vi.fn().mockImplementation(function () { return {
-		deployments: {
-			upload: vi.fn().mockResolvedValue({ deployment: 'happy-cat-abc1234.shipstatic.com' }),
-			list: vi.fn().mockResolvedValue({ deployments: [{ deployment: 'a' }, { deployment: 'b' }, { deployment: 'c' }] }),
-			get: vi.fn().mockResolvedValue({ deployment: 'a' }),
-			set: vi.fn().mockResolvedValue({ deployment: 'a' }),
-			remove: vi.fn().mockResolvedValue(undefined),
-		},
-		domains: {
-			set: vi.fn().mockResolvedValue({ domain: 'www.example.com' }),
-			list: vi.fn().mockResolvedValue({ domains: [{ domain: 'a.com' }, { domain: 'b.com' }] }),
-			get: vi.fn().mockResolvedValue({ domain: 'www.example.com' }),
-			records: vi.fn().mockResolvedValue({ records: [] }),
-			validate: vi.fn().mockResolvedValue({ valid: true }),
-			verify: vi.fn().mockResolvedValue({ verified: true }),
-			remove: vi.fn().mockResolvedValue(undefined),
-		},
-		whoami: vi.fn().mockResolvedValue({ email: 'test@example.com', plan: 'free' }),
-	}; }),
+	default: vi.fn().mockImplementation(function () {
+		return {
+			deployments: {
+				upload: vi.fn().mockResolvedValue({ deployment: 'happy-cat-abc1234.shipstatic.com' }),
+				list: vi
+					.fn()
+					.mockResolvedValue({
+						deployments: [{ deployment: 'a' }, { deployment: 'b' }, { deployment: 'c' }],
+					}),
+				get: vi.fn().mockResolvedValue({ deployment: 'a' }),
+				set: vi.fn().mockResolvedValue({ deployment: 'a' }),
+				remove: vi.fn().mockResolvedValue(undefined),
+			},
+			domains: {
+				set: vi.fn().mockResolvedValue({ domain: 'www.example.com' }),
+				list: vi.fn().mockResolvedValue({ domains: [{ domain: 'a.com' }, { domain: 'b.com' }] }),
+				get: vi.fn().mockResolvedValue({ domain: 'www.example.com' }),
+				records: vi.fn().mockResolvedValue({ records: [] }),
+				validate: vi.fn().mockResolvedValue({ valid: true }),
+				verify: vi.fn().mockResolvedValue({ verified: true }),
+				remove: vi.fn().mockResolvedValue(undefined),
+			},
+			whoami: vi.fn().mockResolvedValue({ email: 'test@example.com', plan: 'free' }),
+		};
+	}),
 }));
 
 vi.mock('fs/promises', () => ({
@@ -43,15 +49,16 @@ vi.mock('fs/promises', () => ({
 }));
 
 import Ship from '@shipstatic/ship';
-import { mkdtemp, writeFile, mkdir, rm } from 'fs/promises';
+import { writeFile, mkdir, rm } from 'fs/promises';
 const MockShip = vi.mocked(Ship);
 
 function createContext(params: Record<string, any>, credentials?: Record<string, any> | null) {
 	return {
 		getNodeParameter: vi.fn((name: string) => params[name]),
-		getCredentials: credentials === null
-			? vi.fn().mockRejectedValue(new Error('No credentials'))
-			: vi.fn().mockResolvedValue(credentials ?? { apiKey: 'ship-test' }),
+		getCredentials:
+			credentials === null
+				? vi.fn().mockRejectedValue(new Error('No credentials'))
+				: vi.fn().mockResolvedValue(credentials ?? { apiKey: 'ship-test' }),
 		getInputData: vi.fn(() => [{ json: {} }]),
 		getNode: vi.fn(() => ({ name: 'ShipStatic' })),
 		continueOnFail: vi.fn(() => false),
@@ -82,7 +89,12 @@ describe('credential resolution', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('creates Ship with API key when credentials are set', async () => {
-		const ctx = createContext({ resource: 'deployment', operation: 'upload', binaryPropertyName: 'data', options: {} });
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'upload',
+			binaryPropertyName: 'data',
+			options: {},
+		});
 
 		await node.execute.call(ctx);
 
@@ -90,7 +102,10 @@ describe('credential resolution', () => {
 	});
 
 	it('creates Ship without API key for upload when no credentials', async () => {
-		const ctx = createContext({ resource: 'deployment', operation: 'upload', binaryPropertyName: 'data', options: {} }, null);
+		const ctx = createContext(
+			{ resource: 'deployment', operation: 'upload', binaryPropertyName: 'data', options: {} },
+			null,
+		);
 
 		await node.execute.call(ctx);
 
@@ -100,7 +115,9 @@ describe('credential resolution', () => {
 	it('throws for non-upload operations when no credentials', async () => {
 		const ctx = createContext({ resource: 'deployment', operation: 'getMany' }, null);
 
-		await expect(node.execute.call(ctx)).rejects.toThrow('This operation requires a ShipStatic API key');
+		await expect(node.execute.call(ctx)).rejects.toThrow(
+			'This operation requires a ShipStatic API key',
+		);
 	});
 });
 
@@ -109,10 +126,13 @@ describe('upload', () => {
 
 	it('passes via: n8n and parsed labels to SDK', async () => {
 		const mockUpload = vi.fn().mockResolvedValue({ deployment: 'test.shipstatic.com' });
-		MockShip.mockImplementationOnce(function () { return { deployments: { upload: mockUpload } } as any; });
+		MockShip.mockImplementationOnce(function () {
+			return { deployments: { upload: mockUpload } } as any;
+		});
 
 		const ctx = createContext({
-			resource: 'deployment', operation: 'upload',
+			resource: 'deployment',
+			operation: 'upload',
 			binaryPropertyName: 'data',
 			options: { labels: 'prod, v2' },
 		});
@@ -127,11 +147,15 @@ describe('upload', () => {
 
 	it('collects multiple items into one deployment', async () => {
 		const mockUpload = vi.fn().mockResolvedValue({ deployment: 'test.shipstatic.com' });
-		MockShip.mockImplementationOnce(function () { return { deployments: { upload: mockUpload } } as any; });
+		MockShip.mockImplementationOnce(function () {
+			return { deployments: { upload: mockUpload } } as any;
+		});
 
 		const ctx = createContext({
-			resource: 'deployment', operation: 'upload',
-			binaryPropertyName: 'data', options: {},
+			resource: 'deployment',
+			operation: 'upload',
+			binaryPropertyName: 'data',
+			options: {},
 		});
 		ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }]);
 		ctx.helpers.assertBinaryData
@@ -149,14 +173,21 @@ describe('upload', () => {
 	});
 
 	it('preserves directory structure from binary metadata', async () => {
-		MockShip.mockImplementationOnce(function () { return { deployments: { upload: vi.fn().mockResolvedValue({ deployment: 'x' }) } } as any; });
+		MockShip.mockImplementationOnce(function () {
+			return { deployments: { upload: vi.fn().mockResolvedValue({ deployment: 'x' }) } } as any;
+		});
 
 		const ctx = createContext({
-			resource: 'deployment', operation: 'upload',
-			binaryPropertyName: 'data', options: {},
+			resource: 'deployment',
+			operation: 'upload',
+			binaryPropertyName: 'data',
+			options: {},
 		});
 		// n8n sets directory to an absolute path — leading slash is stripped for path.join safety
-		ctx.helpers.assertBinaryData.mockReturnValue({ fileName: 'app.js', directory: '/home/node/.n8n-files/dist/assets/js' });
+		ctx.helpers.assertBinaryData.mockReturnValue({
+			fileName: 'app.js',
+			directory: '/home/node/.n8n-files/dist/assets/js',
+		});
 		ctx.helpers.getBinaryDataBuffer.mockResolvedValue(Buffer.from('console.log()'));
 
 		await node.execute.call(ctx);
@@ -165,15 +196,24 @@ describe('upload', () => {
 			'/tmp/n8n-shipstatic-test/home/node/.n8n-files/dist/assets/js/app.js',
 			Buffer.from('console.log()'),
 		);
-		expect(mkdir).toHaveBeenCalledWith('/tmp/n8n-shipstatic-test/home/node/.n8n-files/dist/assets/js', { recursive: true });
+		expect(mkdir).toHaveBeenCalledWith(
+			'/tmp/n8n-shipstatic-test/home/node/.n8n-files/dist/assets/js',
+			{ recursive: true },
+		);
 	});
 
 	it('cleans up temp directory on SDK error', async () => {
-		MockShip.mockImplementationOnce(function () { return { deployments: { upload: vi.fn().mockRejectedValue(new Error('Upload failed')) } } as any; });
+		MockShip.mockImplementationOnce(function () {
+			return {
+				deployments: { upload: vi.fn().mockRejectedValue(new Error('Upload failed')) },
+			} as any;
+		});
 
 		const ctx = createContext({
-			resource: 'deployment', operation: 'upload',
-			binaryPropertyName: 'data', options: {},
+			resource: 'deployment',
+			operation: 'upload',
+			binaryPropertyName: 'data',
+			options: {},
 		});
 
 		await expect(node.execute.call(ctx)).rejects.toThrow('Upload failed');
@@ -182,11 +222,17 @@ describe('upload', () => {
 	});
 
 	it('returns error item when continueOnFail is enabled', async () => {
-		MockShip.mockImplementationOnce(function () { return { deployments: { upload: vi.fn().mockRejectedValue(new Error('Upload failed')) } } as any; });
+		MockShip.mockImplementationOnce(function () {
+			return {
+				deployments: { upload: vi.fn().mockRejectedValue(new Error('Upload failed')) },
+			} as any;
+		});
 
 		const ctx = createContext({
-			resource: 'deployment', operation: 'upload',
-			binaryPropertyName: 'data', options: {},
+			resource: 'deployment',
+			operation: 'upload',
+			binaryPropertyName: 'data',
+			options: {},
 		});
 		ctx.continueOnFail.mockReturnValue(true);
 
@@ -209,7 +255,12 @@ describe('list operations', () => {
 	});
 
 	it('slices to limit when returnAll is false', async () => {
-		const ctx = createContext({ resource: 'deployment', operation: 'getMany', returnAll: false, limit: 2 });
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'getMany',
+			returnAll: false,
+			limit: 2,
+		});
 
 		const [results] = await node.execute.call(ctx);
 
@@ -222,10 +273,13 @@ describe('deployment update', () => {
 
 	it('clears labels when input is empty', async () => {
 		const mockSet = vi.fn().mockResolvedValue({ deployment: 'a' });
-		MockShip.mockImplementationOnce(function () { return { deployments: { set: mockSet } } as any; });
+		MockShip.mockImplementationOnce(function () {
+			return { deployments: { set: mockSet } } as any;
+		});
 
 		const ctx = createContext({
-			resource: 'deployment', operation: 'update',
+			resource: 'deployment',
+			operation: 'update',
 			deploymentId: 'test.shipstatic.com',
 			labels: '',
 		});
@@ -240,7 +294,11 @@ describe('void operations', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('returns { success: true } for delete', async () => {
-		const ctx = createContext({ resource: 'deployment', operation: 'delete', deploymentId: 'test.shipstatic.com' });
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'delete',
+			deploymentId: 'test.shipstatic.com',
+		});
 
 		const [result] = await node.execute.call(ctx);
 
@@ -252,10 +310,13 @@ describe('error handling', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('returns error item for per-item operations when continueOnFail is enabled', async () => {
-		MockShip.mockImplementationOnce(function () { return { deployments: { get: vi.fn().mockRejectedValue(new Error('Not found')) } } as any; });
+		MockShip.mockImplementationOnce(function () {
+			return { deployments: { get: vi.fn().mockRejectedValue(new Error('Not found')) } } as any;
+		});
 
 		const ctx = createContext({
-			resource: 'deployment', operation: 'get',
+			resource: 'deployment',
+			operation: 'get',
 			deploymentId: 'test.shipstatic.com',
 		});
 		ctx.continueOnFail.mockReturnValue(true);
@@ -271,10 +332,13 @@ describe('domain set', () => {
 
 	it('converts empty deployment string to undefined', async () => {
 		const mockSet = vi.fn().mockResolvedValue({ domain: 'www.example.com' });
-		MockShip.mockImplementationOnce(function () { return { domains: { set: mockSet } } as any; });
+		MockShip.mockImplementationOnce(function () {
+			return { domains: { set: mockSet } } as any;
+		});
 
 		const ctx = createContext({
-			resource: 'domain', operation: 'set',
+			resource: 'domain',
+			operation: 'set',
 			domainName: 'www.example.com',
 			options: { deployment: '', labels: '' },
 		});

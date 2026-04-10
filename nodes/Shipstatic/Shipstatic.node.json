@@ -10,7 +10,17 @@
 			}
 		]
 	},
-	"alias": ["ship", "static", "hosting", "deploy", "website", "publish", "web", "landing page", "prototype"],
+	"alias": [
+		"ship",
+		"static",
+		"hosting",
+		"deploy",
+		"website",
+		"publish",
+		"web",
+		"landing page",
+		"prototype"
+	],
 	"subcategories": {
 		"Utility": ["Other"],
 		"Development": ["Other"]

@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-shipstatic",
-	"version": "0.3.3",
+	"version": "0.3.4",
 	"description": "Free, no account needed — deploy static websites, landing pages, and prototypes instantly from n8n workflows",
 	"keywords": [
 		"n8n-community-node-package",
@@ -22,7 +22,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/shipstatic/node.git"
+		"url": "https://github.com/shipstatic/n8n.git"
 	},
 	"main": "dist/nodes/Shipstatic/Shipstatic.node.js",
 	"scripts": {
@@ -50,8 +50,9 @@
 		"@shipstatic/ship": "^0.8.7"
 	},
 	"devDependencies": {
+		"@eslint/js": "^9.39.4",
 		"@n8n/node-cli": "latest",
-		"eslint": "^10.2.0",
+		"eslint": "^9.39.4",
 		"prettier": "^3.8.1",
 		"release-it": "^19.2.4",
 		"typescript": "^6.0.2",

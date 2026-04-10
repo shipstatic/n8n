@@ -15,7 +15,10 @@ import { dirname, join } from 'path';
 
 export function parseLabels(value: string): string[] | undefined {
 	if (!value) return undefined;
-	return value.split(',').map((l) => l.trim()).filter(Boolean);
+	return value
+		.split(',')
+		.map((l) => l.trim())
+		.filter(Boolean);
 }
 
 function toJson(data: unknown): INodeExecutionData['json'] {
@@ -30,7 +33,8 @@ export class Shipstatic implements INodeType {
 		group: ['output'],
 		version: 1,
 		subtitle: '={{$parameter["resource"] + ": " + $parameter["operation"]}}',
-		description: 'Free, no account needed — deploy static websites, landing pages, and prototypes instantly',
+		description:
+			'Free, no account needed — deploy static websites, landing pages, and prototypes instantly',
 		defaults: {
 			name: 'ShipStatic',
 		},
@@ -66,11 +70,37 @@ export class Shipstatic implements INodeType {
 				noDataExpression: true,
 				displayOptions: { show: { resource: ['deployment'] } },
 				options: [
-					{ name: 'Upload', value: 'upload', description: 'Publish files and get a live URL instantly — no account needed', action: 'Upload a deployment' },
-					{ name: 'Get Many', value: 'getMany', description: 'List all your deployed sites with their URLs, status, and labels', action: 'List all deployments' },
-					{ name: 'Get', value: 'get', description: 'Get details for a specific deployment including URL, status, and file count', action: 'Get a deployment' },
-					{ name: 'Update', value: 'update', description: 'Update the labels on a deployment for organization and filtering', action: 'Update a deployment' },
-					{ name: 'Delete', value: 'delete', description: 'Permanently remove a deployment and all its files', action: 'Delete a deployment' },
+					{
+						name: 'Delete',
+						value: 'delete',
+						description: 'Permanently remove a deployment and all its files',
+						action: 'Delete a deployment',
+					},
+					{
+						name: 'Get',
+						value: 'get',
+						description:
+							'Get details for a specific deployment including URL, status, and file count',
+						action: 'Get a deployment',
+					},
+					{
+						name: 'Get Many',
+						value: 'getMany',
+						description: 'List all your deployed sites with their URLs, status, and labels',
+						action: 'List all deployments',
+					},
+					{
+						name: 'Update',
+						value: 'update',
+						description: 'Update the labels on a deployment for organization and filtering',
+						action: 'Update a deployment',
+					},
+					{
+						name: 'Upload',
+						value: 'upload',
+						description: 'Publish files and get a live URL instantly — no account needed',
+						action: 'Upload a deployment',
+					},
 				],
 				default: 'upload',
 			},
@@ -83,13 +113,51 @@ export class Shipstatic implements INodeType {
 				noDataExpression: true,
 				displayOptions: { show: { resource: ['domain'] } },
 				options: [
-					{ name: 'Create or Update', value: 'set', description: 'Connect a custom domain to your site, switch deployments, or update labels', action: 'Create or update a domain' },
-					{ name: 'Get Many', value: 'getMany', description: 'List all your custom domains with their linked sites and verification status', action: 'List all domains' },
-					{ name: 'Get', value: 'get', description: 'Get details for a specific domain including its linked site and DNS status', action: 'Get a domain' },
-					{ name: 'Get DNS Records', value: 'records', description: 'Get the DNS records you need to configure at your DNS provider', action: 'Get DNS records' },
-					{ name: 'Validate', value: 'validate', description: 'Check if a domain name is valid and available before connecting it', action: 'Validate a domain' },
-					{ name: 'Verify DNS', value: 'verify', description: 'Check if DNS is configured correctly after you set up the records', action: 'Verify DNS' },
-					{ name: 'Delete', value: 'delete', description: 'Permanently disconnect and remove a custom domain', action: 'Delete a domain' },
+					{
+						name: 'Create or Update',
+						value: 'set',
+						description:
+							'Connect a custom domain to your site, switch deployments, or update labels',
+						action: 'Create or update a domain',
+					},
+					{
+						name: 'Delete',
+						value: 'delete',
+						description: 'Permanently disconnect and remove a custom domain',
+						action: 'Delete a domain',
+					},
+					{
+						name: 'Get',
+						value: 'get',
+						description:
+							'Get details for a specific domain including its linked site and DNS status',
+						action: 'Get a domain',
+					},
+					{
+						name: 'Get DNS Records',
+						value: 'records',
+						description: 'Get the DNS records you need to configure at your DNS provider',
+						action: 'Get DNS records',
+					},
+					{
+						name: 'Get Many',
+						value: 'getMany',
+						description:
+							'List all your custom domains with their linked sites and verification status',
+						action: 'List all domains',
+					},
+					{
+						name: 'Validate',
+						value: 'validate',
+						description: 'Check if a domain name is valid and available before connecting it',
+						action: 'Validate a domain',
+					},
+					{
+						name: 'Verify DNS',
+						value: 'verify',
+						description: 'Check if DNS is configured correctly after you set up the records',
+						action: 'Verify DNS',
+					},
 				],
 				default: 'set',
 			},
@@ -102,7 +170,12 @@ export class Shipstatic implements INodeType {
 				noDataExpression: true,
 				displayOptions: { show: { resource: ['account'] } },
 				options: [
-					{ name: 'Get', value: 'get', description: 'Get your account details including email, plan, and usage', action: 'Get account info' },
+					{
+						name: 'Get',
+						value: 'get',
+						description: 'Get your account details including email, plan, and usage',
+						action: 'Get account info',
+					},
 				],
 				default: 'get',
 			},
@@ -121,14 +194,17 @@ export class Shipstatic implements INodeType {
 
 			// Deployment: ID (get, update, delete)
 			{
-				displayName: 'Deployment',
+				displayName: 'Deployment Name or ID',
 				name: 'deploymentId',
 				type: 'options',
 				typeOptions: { loadOptionsMethod: 'getDeployments' },
 				default: '',
 				required: true,
-				displayOptions: { show: { resource: ['deployment'], operation: ['get', 'update', 'delete'] } },
-				description: 'Deployment hostname (e.g. "happy-cat-abc1234.shipstatic.com")',
+				displayOptions: {
+					show: { resource: ['deployment'], operation: ['get', 'update', 'delete'] },
+				},
+				description:
+					'Deployment hostname (e.g. "happy-cat-abc1234.shipstatic.com"). Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 
 			// Deployment: labels (update — the payload, not optional)
@@ -144,14 +220,17 @@ export class Shipstatic implements INodeType {
 
 			// Domain: name — existing domain (get, records, verify, delete)
 			{
-				displayName: 'Domain Name',
+				displayName: 'Domain Name or ID',
 				name: 'domainName',
 				type: 'options',
 				typeOptions: { loadOptionsMethod: 'getDomains' },
 				default: '',
 				required: true,
-				displayOptions: { show: { resource: ['domain'], operation: ['get', 'records', 'verify', 'delete'] } },
-				description: 'Domain name (e.g. "www.example.com")',
+				displayOptions: {
+					show: { resource: ['domain'], operation: ['get', 'records', 'verify', 'delete'] },
+				},
+				description:
+					'Domain name (e.g. "www.example.com"). Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 			},
 
 			// Domain: name — new/any domain (set, validate)
@@ -218,12 +297,13 @@ export class Shipstatic implements INodeType {
 				displayOptions: { show: { resource: ['domain'], operation: ['set'] } },
 				options: [
 					{
-						displayName: 'Deployment',
+						displayName: 'Deployment Name or ID',
 						name: 'deployment',
 						type: 'options',
 						typeOptions: { loadOptionsMethod: 'getDeployments' },
 						default: '',
-						description: 'Deployment to link to this domain',
+						description:
+							'Deployment to link to this domain. Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>.',
 					},
 					{
 						displayName: 'Labels',
@@ -242,11 +322,15 @@ export class Shipstatic implements INodeType {
 		loadOptions: {
 			async getDeployments(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				try {
-					const response = await this.helpers.httpRequestWithAuthentication.call(this, 'shipstaticApi', {
-						method: 'GET',
-						url: 'https://api.shipstatic.com/deployments',
-						json: true,
-					});
+					const response = await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'shipstaticApi',
+						{
+							method: 'GET',
+							url: 'https://api.shipstatic.com/deployments',
+							json: true,
+						},
+					);
 					return (response.deployments ?? []).map((d: { deployment: string }) => ({
 						name: d.deployment,
 						value: d.deployment,
@@ -257,11 +341,15 @@ export class Shipstatic implements INodeType {
 			},
 			async getDomains(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
 				try {
-					const response = await this.helpers.httpRequestWithAuthentication.call(this, 'shipstaticApi', {
-						method: 'GET',
-						url: 'https://api.shipstatic.com/domains',
-						json: true,
-					});
+					const response = await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'shipstaticApi',
+						{
+							method: 'GET',
+							url: 'https://api.shipstatic.com/domains',
+							json: true,
+						},
+					);
 					return (response.domains ?? []).map((d: { domain: string }) => ({
 						name: d.domain,
 						value: d.domain,
