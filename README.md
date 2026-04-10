@@ -42,31 +42,31 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 ### Deployments
 
-| Operation | Description |
-|-----------|-------------|
-| **Upload** | Publish files and get a live URL instantly |
-| **Get Many** | List all your deployed sites with their URLs, status, and labels |
-| **Get** | Get details for a specific deployment including URL, status, and file count |
-| **Update** | Update the labels on a deployment for organization and filtering |
-| **Delete** | Permanently remove a deployment and all its files |
+| Operation    | Description                                                                 |
+| ------------ | --------------------------------------------------------------------------- |
+| **Upload**   | Publish files and get a live URL instantly                                  |
+| **Get Many** | List all your deployed sites with their URLs, status, and labels            |
+| **Get**      | Get details for a specific deployment including URL, status, and file count |
+| **Update**   | Update the labels on a deployment for organization and filtering            |
+| **Delete**   | Permanently remove a deployment and all its files                           |
 
 ### Domains
 
-| Operation | Description |
-|-----------|-------------|
-| **Create or Update** | Connect a custom domain to your site, switch deployments, or update labels |
-| **Get Many** | List all your custom domains with their linked sites and verification status |
-| **Get** | Get details for a specific domain including its linked site and DNS status |
-| **Get DNS Records** | Get the DNS records you need to configure at your DNS provider |
-| **Validate** | Check if a domain name is valid and available before connecting it |
-| **Verify DNS** | Check if DNS is configured correctly after you set up the records |
-| **Delete** | Permanently disconnect and remove a custom domain |
+| Operation            | Description                                                                  |
+| -------------------- | ---------------------------------------------------------------------------- |
+| **Create or Update** | Connect a custom domain to your site, switch deployments, or update labels   |
+| **Get Many**         | List all your custom domains with their linked sites and verification status |
+| **Get**              | Get details for a specific domain including its linked site and DNS status   |
+| **Get DNS Records**  | Get the DNS records you need to configure at your DNS provider               |
+| **Validate**         | Check if a domain name is valid and available before connecting it           |
+| **Verify DNS**       | Check if DNS is configured correctly after you set up the records            |
+| **Delete**           | Permanently disconnect and remove a custom domain                            |
 
 ### Account
 
-| Operation | Description |
-|-----------|-------------|
-| **Get** | Get your account details including email, plan, and usage |
+| Operation | Description                                               |
+| --------- | --------------------------------------------------------- |
+| **Get**   | Get your account details including email, plan, and usage |
 
 ## Example Workflows
 

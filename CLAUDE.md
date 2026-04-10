@@ -29,6 +29,7 @@ pnpm dev            # Dev mode with hot reload (icon won't show — see Known Go
 ### SDK Wrapper — No Business Logic
 
 Every operation maps 1:1 to a single `@shipstatic/ship` SDK method. Same pattern as the MCP integration. The n8n layer handles only:
+
 - UI definition (resource/operation selectors, parameter fields)
 - Credential retrieval → `new Ship({ apiKey })`
 - Routing by resource + operation → SDK call
@@ -39,21 +40,21 @@ No HTTP calls, no auth logic, no domain validation. The SDK handles everything.
 
 ### Operations (13 total, matching MCP)
 
-| # | Resource | Operation | SDK Call |
-|---|----------|-----------|---------|
-| 1 | Deployment | Upload | `ship.deployments.upload(tempDir, {labels, via: 'n8n'})` — accepts binary data, works without credentials |
-| 2 | Deployment | Get Many | `ship.deployments.list()` → fan out `.deployments` |
-| 3 | Deployment | Get | `ship.deployments.get(id)` |
-| 4 | Deployment | Update | `ship.deployments.set(id, {labels})` |
-| 5 | Deployment | Delete | `ship.deployments.remove(id)` → `{success: true}` |
-| 6 | Domain | Create or Update | `ship.domains.set(name, {deployment?, labels?})` |
-| 7 | Domain | Get Many | `ship.domains.list()` → fan out `.domains` |
-| 8 | Domain | Get | `ship.domains.get(name)` |
-| 9 | Domain | Get DNS Records | `ship.domains.records(name)` |
-| 10 | Domain | Validate | `ship.domains.validate(name)` |
-| 11 | Domain | Verify DNS | `ship.domains.verify(name)` |
-| 12 | Domain | Delete | `ship.domains.remove(name)` → `{success: true}` |
-| 13 | Account | Get | `ship.whoami()` |
+| #   | Resource   | Operation        | SDK Call                                                                                                  |
+| --- | ---------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
+| 1   | Deployment | Upload           | `ship.deployments.upload(tempDir, {labels, via: 'n8n'})` — accepts binary data, works without credentials |
+| 2   | Deployment | Get Many         | `ship.deployments.list()` → fan out `.deployments`                                                        |
+| 3   | Deployment | Get              | `ship.deployments.get(id)`                                                                                |
+| 4   | Deployment | Update           | `ship.deployments.set(id, {labels})`                                                                      |
+| 5   | Deployment | Delete           | `ship.deployments.remove(id)` → `{success: true}`                                                         |
+| 6   | Domain     | Create or Update | `ship.domains.set(name, {deployment?, labels?})`                                                          |
+| 7   | Domain     | Get Many         | `ship.domains.list()` → fan out `.domains`                                                                |
+| 8   | Domain     | Get              | `ship.domains.get(name)`                                                                                  |
+| 9   | Domain     | Get DNS Records  | `ship.domains.records(name)`                                                                              |
+| 10  | Domain     | Validate         | `ship.domains.validate(name)`                                                                             |
+| 11  | Domain     | Verify DNS       | `ship.domains.verify(name)`                                                                               |
+| 12  | Domain     | Delete           | `ship.domains.remove(name)` → `{success: true}`                                                           |
+| 13  | Account    | Get              | `ship.whoami()`                                                                                           |
 
 ### Binary Data Upload
 
@@ -121,6 +122,7 @@ tests/
 ```
 
 Tests cover business logic only — not n8n framework scaffolding:
+
 - `parseLabels` — comma parsing, trimming, empty filtering
 - Credential resolution — with key, without key + upload, without key + other
 - Upload — `via: 'n8n'`, label forwarding, multi-item collection, directory structure, temp cleanup on error
@@ -166,4 +168,4 @@ When manually installing a node into `~/.n8n/custom/`, you must `npm init -y` fi
 
 ---
 
-*This file provides Claude Code guidance. User-facing documentation lives in README.md.*
+_This file provides Claude Code guidance. User-facing documentation lives in README.md._
