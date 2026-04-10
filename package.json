@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-shipstatic",
-	"version": "0.5.3",
+	"version": "0.5.4",
 	"description": "Free, no account needed — deploy static websites, landing pages, and prototypes instantly from n8n workflows",
 	"keywords": [
 		"n8n-community-node-package",
