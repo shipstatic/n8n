@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { parseLabels, Shipstatic } from '../nodes/Shipstatic/Shipstatic.node';
 
-// Mock n8n-workflow (peer dependency)
 vi.mock('n8n-workflow', () => ({
 	NodeConnectionTypes: { Main: 'main' },
 	NodeOperationError: class extends Error {
@@ -11,46 +10,6 @@ vi.mock('n8n-workflow', () => ({
 		}
 	},
 }));
-
-// Mock Ship SDK
-vi.mock('@shipstatic/ship', () => ({
-	default: vi.fn().mockImplementation(function () {
-		return {
-			deployments: {
-				upload: vi.fn().mockResolvedValue({ deployment: 'happy-cat-abc1234.shipstatic.com' }),
-				list: vi
-					.fn()
-					.mockResolvedValue({
-						deployments: [{ deployment: 'a' }, { deployment: 'b' }, { deployment: 'c' }],
-					}),
-				get: vi.fn().mockResolvedValue({ deployment: 'a' }),
-				set: vi.fn().mockResolvedValue({ deployment: 'a' }),
-				remove: vi.fn().mockResolvedValue(undefined),
-			},
-			domains: {
-				set: vi.fn().mockResolvedValue({ domain: 'www.example.com' }),
-				list: vi.fn().mockResolvedValue({ domains: [{ domain: 'a.com' }, { domain: 'b.com' }] }),
-				get: vi.fn().mockResolvedValue({ domain: 'www.example.com' }),
-				records: vi.fn().mockResolvedValue({ records: [] }),
-				validate: vi.fn().mockResolvedValue({ valid: true }),
-				verify: vi.fn().mockResolvedValue({ verified: true }),
-				remove: vi.fn().mockResolvedValue(undefined),
-			},
-			whoami: vi.fn().mockResolvedValue({ email: 'test@example.com', plan: 'free' }),
-		};
-	}),
-}));
-
-vi.mock('fs/promises', () => ({
-	mkdtemp: vi.fn().mockResolvedValue('/tmp/n8n-shipstatic-test'),
-	writeFile: vi.fn().mockResolvedValue(undefined),
-	mkdir: vi.fn().mockResolvedValue(undefined),
-	rm: vi.fn().mockResolvedValue(undefined),
-}));
-
-import Ship from '@shipstatic/ship';
-import { writeFile, mkdir, rm } from 'fs/promises';
-const MockShip = vi.mocked(Ship);
 
 function createContext(params: Record<string, any>, credentials?: Record<string, any> | null) {
 	return {
@@ -65,6 +24,8 @@ function createContext(params: Record<string, any>, credentials?: Record<string,
 		helpers: {
 			assertBinaryData: vi.fn().mockReturnValue({ fileName: 'index.html' }),
 			getBinaryDataBuffer: vi.fn().mockResolvedValue(Buffer.from('<html></html>')),
+			httpRequest: vi.fn().mockResolvedValue({ deployment: 'test.shipstatic.com' }),
+			httpRequestWithAuthentication: vi.fn().mockResolvedValue({}),
 		},
 	} as any;
 }
@@ -85,10 +46,10 @@ describe('parseLabels', () => {
 	});
 });
 
-describe('credential resolution', () => {
+describe('authentication — upload works with or without credentials', () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it('creates Ship with API key when credentials are set', async () => {
+	it('with API key → permanent deployment under your account', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'upload',
@@ -98,21 +59,33 @@ describe('credential resolution', () => {
 
 		await node.execute.call(ctx);
 
-		expect(MockShip).toHaveBeenCalledWith({ apiKey: 'ship-test' });
+		const uploadCall = ctx.helpers.httpRequest.mock.calls.find(
+			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
+		);
+		expect(uploadCall).toBeDefined();
+		expect(uploadCall[0].headers.Authorization).toBe('Bearer ship-test');
 	});
 
-	it('creates Ship without API key for upload when no credentials', async () => {
+	it('without API key → public deployment via agent token (expires in 3 days)', async () => {
 		const ctx = createContext(
 			{ resource: 'deployment', operation: 'upload', binaryPropertyName: 'data', options: {} },
 			null,
 		);
+		ctx.helpers.httpRequest
+			.mockResolvedValueOnce({ secret: 'agent-token-123' })
+			.mockResolvedValueOnce({ deployment: 'test.shipstatic.com' });
 
 		await node.execute.call(ctx);
 
-		expect(MockShip).toHaveBeenCalledWith({});
+		const agentCall = ctx.helpers.httpRequest.mock.calls[0];
+		expect(agentCall[0].url).toContain('/tokens/agent');
+		expect(agentCall[0].method).toBe('POST');
+
+		const uploadCall = ctx.helpers.httpRequest.mock.calls[1];
+		expect(uploadCall[0].headers.Authorization).toBe('Bearer agent-token-123');
 	});
 
-	it('throws for non-upload operations when no credentials', async () => {
+	it('non-upload operations always require an API key', async () => {
 		const ctx = createContext({ resource: 'deployment', operation: 'getMany' }, null);
 
 		await expect(node.execute.call(ctx)).rejects.toThrow(
@@ -124,12 +97,7 @@ describe('credential resolution', () => {
 describe('upload', () => {
 	beforeEach(() => vi.clearAllMocks());
 
-	it('passes via: n8n and parsed labels to SDK', async () => {
-		const mockUpload = vi.fn().mockResolvedValue({ deployment: 'test.shipstatic.com' });
-		MockShip.mockImplementationOnce(function () {
-			return { deployments: { upload: mockUpload } } as any;
-		});
-
+	it('sends via, spa, and parsed labels in FormData', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'upload',
@@ -139,18 +107,16 @@ describe('upload', () => {
 
 		await node.execute.call(ctx);
 
-		expect(mockUpload).toHaveBeenCalledWith('/tmp/n8n-shipstatic-test', {
-			labels: ['prod', 'v2'],
-			via: 'n8n',
-		});
+		const uploadCall = ctx.helpers.httpRequest.mock.calls.find(
+			(c: any[]) => c[0].url?.endsWith('/deployments') && c[0].method === 'POST',
+		);
+		const form = uploadCall[0].body as FormData;
+		expect(form.get('via')).toBe('n8n');
+		expect(form.get('spa')).toBe('true');
+		expect(form.get('labels')).toBe('["prod","v2"]');
 	});
 
 	it('collects multiple items into one deployment', async () => {
-		const mockUpload = vi.fn().mockResolvedValue({ deployment: 'test.shipstatic.com' });
-		MockShip.mockImplementationOnce(function () {
-			return { deployments: { upload: mockUpload } } as any;
-		});
-
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'upload',
@@ -167,79 +133,79 @@ describe('upload', () => {
 
 		const [results] = await node.execute.call(ctx);
 
-		expect(writeFile).toHaveBeenCalledTimes(2);
-		expect(rm).toHaveBeenCalledWith('/tmp/n8n-shipstatic-test', { recursive: true, force: true });
 		expect(results).toHaveLength(1);
+		const form = ctx.helpers.httpRequest.mock.calls.find((c: any[]) =>
+			c[0].url?.endsWith('/deployments'),
+		)[0].body as FormData;
+		const fileEntries = form.getAll('files[]') as File[];
+		expect(fileEntries).toHaveLength(2);
+		expect(fileEntries[0].name).toBe('index.html');
+		expect(fileEntries[1].name).toBe('css/style.css');
 	});
 
-	it('preserves directory structure from binary metadata', async () => {
-		MockShip.mockImplementationOnce(function () {
-			return { deployments: { upload: vi.fn().mockResolvedValue({ deployment: 'x' }) } } as any;
-		});
-
+	it('strips common directory prefix from paths', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'upload',
 			binaryPropertyName: 'data',
 			options: {},
 		});
-		// n8n sets directory to an absolute path — leading slash is stripped for path.join safety
-		ctx.helpers.assertBinaryData.mockReturnValue({
-			fileName: 'app.js',
-			directory: '/home/node/.n8n-files/dist/assets/js',
-		});
-		ctx.helpers.getBinaryDataBuffer.mockResolvedValue(Buffer.from('console.log()'));
+		ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }]);
+		ctx.helpers.assertBinaryData
+			.mockReturnValueOnce({ fileName: 'index.html', directory: 'dist' })
+			.mockReturnValueOnce({ fileName: 'app.js', directory: 'dist/assets' });
+		ctx.helpers.getBinaryDataBuffer
+			.mockResolvedValueOnce(Buffer.from('<html></html>'))
+			.mockResolvedValueOnce(Buffer.from('console.log()'));
 
 		await node.execute.call(ctx);
 
-		expect(writeFile).toHaveBeenCalledWith(
-			'/tmp/n8n-shipstatic-test/home/node/.n8n-files/dist/assets/js/app.js',
-			Buffer.from('console.log()'),
-		);
-		expect(mkdir).toHaveBeenCalledWith(
-			'/tmp/n8n-shipstatic-test/home/node/.n8n-files/dist/assets/js',
-			{ recursive: true },
-		);
+		const form = ctx.helpers.httpRequest.mock.calls.find((c: any[]) =>
+			c[0].url?.endsWith('/deployments'),
+		)[0].body as FormData;
+		const fileEntries = form.getAll('files[]') as File[];
+		expect(fileEntries[0].name).toBe('index.html');
+		expect(fileEntries[1].name).toBe('assets/app.js');
 	});
 
-	it('cleans up temp directory on SDK error', async () => {
-		MockShip.mockImplementationOnce(function () {
-			return {
-				deployments: { upload: vi.fn().mockRejectedValue(new Error('Upload failed')) },
-			} as any;
-		});
-
+	it('skips empty files', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'upload',
 			binaryPropertyName: 'data',
 			options: {},
 		});
+		ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }]);
+		ctx.helpers.assertBinaryData
+			.mockReturnValueOnce({ fileName: 'empty.txt' })
+			.mockReturnValueOnce({ fileName: 'real.html' });
+		ctx.helpers.getBinaryDataBuffer
+			.mockResolvedValueOnce(Buffer.alloc(0))
+			.mockResolvedValueOnce(Buffer.from('<html></html>'));
 
-		await expect(node.execute.call(ctx)).rejects.toThrow('Upload failed');
+		await node.execute.call(ctx);
 
-		expect(rm).toHaveBeenCalledWith('/tmp/n8n-shipstatic-test', { recursive: true, force: true });
+		const form = ctx.helpers.httpRequest.mock.calls.find((c: any[]) =>
+			c[0].url?.endsWith('/deployments'),
+		)[0].body as FormData;
+		const fileEntries = form.getAll('files[]') as File[];
+		expect(fileEntries).toHaveLength(1);
+		expect(fileEntries[0].name).toBe('real.html');
 	});
 
 	it('returns error item when continueOnFail is enabled', async () => {
-		MockShip.mockImplementationOnce(function () {
-			return {
-				deployments: { upload: vi.fn().mockRejectedValue(new Error('Upload failed')) },
-			} as any;
-		});
-
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'upload',
 			binaryPropertyName: 'data',
 			options: {},
 		});
+		ctx.helpers.httpRequest.mockRejectedValue(new Error('Upload failed'));
 		ctx.continueOnFail.mockReturnValue(true);
 
 		const [results] = await node.execute.call(ctx);
 
 		expect(results[0].json).toEqual({ error: 'Upload failed' });
-		expect(rm).toHaveBeenCalled();
 	});
 });
 
@@ -248,6 +214,9 @@ describe('list operations', () => {
 
 	it('returns all items when returnAll is true', async () => {
 		const ctx = createContext({ resource: 'deployment', operation: 'getMany', returnAll: true });
+		ctx.helpers.httpRequestWithAuthentication.mockResolvedValue({
+			deployments: [{ deployment: 'a' }, { deployment: 'b' }, { deployment: 'c' }],
+		});
 
 		const [results] = await node.execute.call(ctx);
 
@@ -261,6 +230,9 @@ describe('list operations', () => {
 			returnAll: false,
 			limit: 2,
 		});
+		ctx.helpers.httpRequestWithAuthentication.mockResolvedValue({
+			deployments: [{ deployment: 'a' }, { deployment: 'b' }, { deployment: 'c' }],
+		});
 
 		const [results] = await node.execute.call(ctx);
 
@@ -272,21 +244,19 @@ describe('deployment update', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('clears labels when input is empty', async () => {
-		const mockSet = vi.fn().mockResolvedValue({ deployment: 'a' });
-		MockShip.mockImplementationOnce(function () {
-			return { deployments: { set: mockSet } } as any;
-		});
-
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'update',
 			deploymentId: 'test.shipstatic.com',
 			labels: '',
 		});
+		ctx.helpers.httpRequestWithAuthentication.mockResolvedValue({ deployment: 'a' });
 
 		await node.execute.call(ctx);
 
-		expect(mockSet).toHaveBeenCalledWith('test.shipstatic.com', { labels: [] });
+		const call = ctx.helpers.httpRequestWithAuthentication.mock.calls[0];
+		expect(call[1].method).toBe('PATCH');
+		expect(call[1].body).toEqual({ labels: [] });
 	});
 });
 
@@ -299,6 +269,7 @@ describe('void operations', () => {
 			operation: 'delete',
 			deploymentId: 'test.shipstatic.com',
 		});
+		ctx.helpers.httpRequestWithAuthentication.mockResolvedValue(undefined);
 
 		const [result] = await node.execute.call(ctx);
 
@@ -310,15 +281,12 @@ describe('error handling', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('returns error item for per-item operations when continueOnFail is enabled', async () => {
-		MockShip.mockImplementationOnce(function () {
-			return { deployments: { get: vi.fn().mockRejectedValue(new Error('Not found')) } } as any;
-		});
-
 		const ctx = createContext({
 			resource: 'deployment',
 			operation: 'get',
 			deploymentId: 'test.shipstatic.com',
 		});
+		ctx.helpers.httpRequestWithAuthentication.mockRejectedValue(new Error('Not found'));
 		ctx.continueOnFail.mockReturnValue(true);
 
 		const [results] = await node.execute.call(ctx);
@@ -331,23 +299,18 @@ describe('domain set', () => {
 	beforeEach(() => vi.clearAllMocks());
 
 	it('converts empty deployment string to undefined', async () => {
-		const mockSet = vi.fn().mockResolvedValue({ domain: 'www.example.com' });
-		MockShip.mockImplementationOnce(function () {
-			return { domains: { set: mockSet } } as any;
-		});
-
 		const ctx = createContext({
 			resource: 'domain',
 			operation: 'set',
 			domainName: 'www.example.com',
 			options: { deployment: '', labels: '' },
 		});
+		ctx.helpers.httpRequestWithAuthentication.mockResolvedValue({ domain: 'www.example.com' });
 
 		await node.execute.call(ctx);
 
-		expect(mockSet).toHaveBeenCalledWith('www.example.com', {
-			deployment: undefined,
-			labels: undefined,
-		});
+		const call = ctx.helpers.httpRequestWithAuthentication.mock.calls[0];
+		expect(call[1].method).toBe('PUT');
+		expect(call[1].body).toEqual({ deployment: undefined, labels: undefined });
 	});
 });
