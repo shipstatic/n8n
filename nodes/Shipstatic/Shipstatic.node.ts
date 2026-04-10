@@ -99,16 +99,17 @@ async function handleDeploy(
 		authorization = `Bearer ${apiKey}`;
 	} else {
 		// No API key — request a short-lived agent token for a public deployment
-		const { secret } = (await ctx.helpers.httpRequest({
+		const tokenResponse = await ctx.helpers.request({
 			method: 'POST',
-			url: `${API}/tokens/agent`,
-			body: {},
+			uri: `${API}/tokens/agent`,
+			headers: { 'Content-Type': 'application/json' },
+			body: '{}',
 			json: true,
-		})) as IDataObject;
-		authorization = `Bearer ${secret}`;
+		});
+		authorization = `Bearer ${tokenResponse.secret}`;
 	}
 
-	// 5. Deploy (uses deprecated request helper — the proven pattern for multipart uploads in n8n)
+	// 5. Deploy
 	const result = await ctx.helpers.request({
 		method: 'POST',
 		uri: `${API}/deployments`,

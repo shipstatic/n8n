@@ -88,12 +88,14 @@ describe('authentication — deploy works with or without credentials', () => {
 			},
 			null,
 		);
-		ctx.helpers.httpRequest.mockResolvedValueOnce({ secret: 'agent-token-123' });
+		ctx.helpers.request
+			.mockResolvedValueOnce({ secret: 'agent-token-123' })
+			.mockResolvedValueOnce({ deployment: 'test.shipstatic.com' });
 
 		await node.execute.call(ctx);
 
-		const agentCall = ctx.helpers.httpRequest.mock.calls[0];
-		expect(agentCall[0].url).toContain('/tokens/agent');
+		const agentCall = ctx.helpers.request.mock.calls[0];
+		expect(agentCall[0].uri).toContain('/tokens/agent');
 		expect(agentCall[0].method).toBe('POST');
 
 		const deployCall = findDeployCall(ctx);
