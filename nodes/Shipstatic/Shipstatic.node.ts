@@ -8,38 +8,12 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 const API = 'https://api.shipstatic.com';
 
 function md5(buf: Buffer): string {
 	return createHash('md5').update(buf).digest('hex');
-}
-
-function buildMultipart(
-	files: { path: string; content: Buffer; md5: string }[],
-	fields: Record<string, string>,
-): { body: Buffer; contentType: string } {
-	const boundary = '----n8n' + randomBytes(16).toString('hex');
-	const parts: Buffer[] = [];
-	for (const f of files) {
-		parts.push(
-			Buffer.from(
-				`--${boundary}\r\nContent-Disposition: form-data; name="files[]"; filename="${f.path}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
-			),
-		);
-		parts.push(f.content);
-		parts.push(Buffer.from('\r\n'));
-	}
-	for (const [name, value] of Object.entries(fields)) {
-		parts.push(
-			Buffer.from(
-				`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`,
-			),
-		);
-	}
-	parts.push(Buffer.from(`--${boundary}--\r\n`));
-	return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
 export function parseLabels(value: string): string[] | undefined {
@@ -106,15 +80,18 @@ async function handleDeploy(
 		}
 	}
 
-	// 3. Build multipart body
-	const labels = parseLabels(options.labels as string);
-	const fields: Record<string, string> = {
+	// 3. Build formData (same pattern as Slack, Google Drive file uploads)
+	const formData: IDataObject = {
+		'files[]': files.map((f) => ({
+			value: f.content,
+			options: { filename: f.path, contentType: 'application/octet-stream' },
+		})),
 		checksums: JSON.stringify(files.map((f) => f.md5)),
 		via: 'n8n',
 		spa: 'true', // server-side SPA detection + rewrite config
 	};
-	if (labels) fields.labels = JSON.stringify(labels);
-	const { body, contentType } = buildMultipart(files, fields);
+	const labels = parseLabels(options.labels as string);
+	if (labels) formData.labels = JSON.stringify(labels);
 
 	// 4. Resolve auth — API key for permanent deploys, agent token for public/temporary
 	let authorization: string;
@@ -131,23 +108,14 @@ async function handleDeploy(
 		authorization = `Bearer ${secret}`;
 	}
 
-	// 5. Deploy
-	let result: IDataObject;
-	try {
-		result = await ctx.helpers.httpRequest({
-			method: 'POST',
-			url: `${API}/deployments`,
-			body,
-			headers: { Authorization: authorization, 'Content-Type': contentType } as IDataObject,
-		});
-	} catch (error: unknown) {
-		// Surface API error details
-		const axiosError = error as { response?: { data?: unknown }; message?: string };
-		const detail = axiosError.response?.data
-			? JSON.stringify(axiosError.response.data)
-			: axiosError.message || 'Unknown error';
-		throw new NodeOperationError(ctx.getNode(), `Deploy failed: ${detail}`);
-	}
+	// 5. Deploy (uses deprecated request helper — the proven pattern for multipart uploads in n8n)
+	const result = await ctx.helpers.request({
+		method: 'POST',
+		uri: `${API}/deployments`,
+		headers: { Authorization: authorization },
+		formData,
+		json: true,
+	});
 
 	return [
 		{
