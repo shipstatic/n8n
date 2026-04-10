@@ -24,9 +24,17 @@ Restart n8n after installing.
 
 Add a **ShipStatic** node to your workflow. No credentials to configure.
 
+**From binary files** (Binary File toggle ON — default):
+
 1. Set Resource to **Deployment**, Operation to **Deploy**
-2. Connect binary files from an upstream node (e.g. Read Binary Files, HTTP Request)
+2. Connect binary files from an upstream node (e.g. HTTP Request, Google Drive, Convert to File)
 3. Run — you get a live, shareable URL on `*.shipstatic.com`
+
+**From text content** (Binary File toggle OFF):
+
+1. Set Resource to **Deployment**, Operation to **Deploy**, toggle **Binary File** off
+2. Paste or wire your HTML into **File Content**
+3. Run — deployed as `index.html` by default (customizable via **File Name**)
 
 That's it. Your site is live instantly. No sign-up, no API key, no configuration.
 
@@ -52,15 +60,15 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 ### Domains
 
-| Operation    | Description                                                                   |
-| ------------ | ----------------------------------------------------------------------------- |
+| Operation    | Description                                                                     |
+| ------------ | ------------------------------------------------------------------------------- |
 | **Get**      | Get domain details including linked deployment, verification status, and labels |
-| **List**     | List all domains with their linked deployments and verification status         |
-| **Records**  | Get the DNS records you need to configure at your DNS provider                |
-| **Remove**   | Permanently disconnect and remove a custom domain                             |
-| **Set**      | Connect a custom domain to your site, switch deployments, or update labels    |
-| **Validate** | Check if a domain name is valid and available before connecting it            |
-| **Verify**   | Check if DNS is configured correctly after you set up the records             |
+| **List**     | List all domains with their linked deployments and verification status          |
+| **Records**  | Get the DNS records you need to configure at your DNS provider                  |
+| **Remove**   | Permanently disconnect and remove a custom domain                               |
+| **Set**      | Connect a custom domain to your site, switch deployments, or update labels      |
+| **Validate** | Check if a domain name is valid and available before connecting it              |
+| **Verify**   | Check if DNS is configured correctly after you set up the records               |
 
 ### Account
 

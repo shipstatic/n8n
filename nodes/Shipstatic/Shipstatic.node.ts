@@ -33,22 +33,31 @@ async function handleDeploy(
 	items: INodeExecutionData[],
 	apiKey: string | undefined,
 ): Promise<INodeExecutionData[]> {
-	const binaryPropertyName = ctx.getNodeParameter('binaryPropertyName', 0) as string;
+	const isBinaryData = ctx.getNodeParameter('binaryData', 0) as boolean;
 	const options = ctx.getNodeParameter('options', 0) as IDataObject;
 
-	// 1. Collect files from binary data
+	// 1. Collect files — from binary data or text content
 	const files: { path: string; content: Buffer; md5: string }[] = [];
-	for (let i = 0; i < items.length; i++) {
-		const binaryData = ctx.helpers.assertBinaryData(i, binaryPropertyName);
-		const buffer = await ctx.helpers.getBinaryDataBuffer(i, binaryPropertyName);
-		if (buffer.length === 0) continue;
-		const dir = (binaryData.directory || '').replace(/^\/+/, '');
-		const fileName = binaryData.fileName || `file_${i}`;
-		files.push({
-			path: dir ? `${dir}/${fileName}` : fileName,
-			content: buffer,
-			md5: md5(buffer),
-		});
+
+	if (isBinaryData) {
+		const binaryPropertyName = ctx.getNodeParameter('binaryPropertyName', 0) as string;
+		for (let i = 0; i < items.length; i++) {
+			const binaryData = ctx.helpers.assertBinaryData(i, binaryPropertyName);
+			const buffer = await ctx.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+			if (buffer.length === 0) continue;
+			const dir = (binaryData.directory || '').replace(/^\/+/, '');
+			const fileName = binaryData.fileName || `file_${i}`;
+			files.push({
+				path: dir ? `${dir}/${fileName}` : fileName,
+				content: buffer,
+				md5: md5(buffer),
+			});
+		}
+	} else {
+		const fileContent = ctx.getNodeParameter('fileContent', 0) as string;
+		const fileName = ctx.getNodeParameter('fileName', 0) as string;
+		const content = Buffer.from(fileContent, 'utf-8');
+		files.push({ path: fileName || 'index.html', content, md5: md5(content) });
 	}
 
 	if (files.length === 0) {
@@ -231,8 +240,7 @@ export class Shipstatic implements INodeType {
 					{
 						name: 'List',
 						value: 'list',
-						description:
-							'List all domains with their linked deployments and verification status',
+						description: 'List all domains with their linked deployments and verification status',
 						action: 'List all domains',
 					},
 					{
@@ -290,14 +298,47 @@ export class Shipstatic implements INodeType {
 
 			// === Required Parameters ===
 
-			// Deployment: binary field (deploy)
+			// Deployment: binary toggle (deploy)
+			{
+				displayName: 'Binary File',
+				name: 'binaryData',
+				type: 'boolean',
+				default: true,
+				displayOptions: { show: { resource: ['deployment'], operation: ['deploy'] } },
+				description: 'Whether the data to deploy should be taken from binary field',
+			},
 			{
 				displayName: 'Input Binary Field',
 				name: 'binaryPropertyName',
 				type: 'string',
 				default: 'data',
-				displayOptions: { show: { resource: ['deployment'], operation: ['deploy'] } },
-				hint: 'The name of the input binary field containing the file data',
+				required: true,
+				displayOptions: {
+					show: { resource: ['deployment'], operation: ['deploy'], binaryData: [true] },
+				},
+				hint: 'The name of the input binary field containing the file to be deployed',
+			},
+			{
+				displayName: 'File Content',
+				name: 'fileContent',
+				type: 'string',
+				default: '',
+				required: true,
+				typeOptions: { rows: 5 },
+				displayOptions: {
+					show: { resource: ['deployment'], operation: ['deploy'], binaryData: [false] },
+				},
+				hint: 'The text content of the file to deploy',
+			},
+			{
+				displayName: 'File Name',
+				name: 'fileName',
+				type: 'string',
+				default: 'index.html',
+				required: true,
+				displayOptions: {
+					show: { resource: ['deployment'], operation: ['deploy'], binaryData: [false] },
+				},
 			},
 
 			// Deployment: ID (get, set, remove)
