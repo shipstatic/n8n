@@ -8,10 +8,13 @@ import type {
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import Ship from '@shipstatic/ship';
-import { mkdtemp, writeFile, mkdir, rm } from 'fs/promises';
-import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { createHash } from 'node:crypto';
+
+const API = 'https://api.shipstatic.com';
+
+function md5(buf: Buffer): string {
+	return createHash('md5').update(buf).digest('hex');
+}
 
 export function parseLabels(value: string): string[] | undefined {
 	if (!value) return undefined;
@@ -23,6 +26,105 @@ export function parseLabels(value: string): string[] | undefined {
 
 function toJson(data: unknown): INodeExecutionData['json'] {
 	return data as INodeExecutionData['json'];
+}
+
+async function handleUpload(
+	ctx: IExecuteFunctions,
+	items: INodeExecutionData[],
+	apiKey: string | undefined,
+): Promise<INodeExecutionData[]> {
+	const binaryPropertyName = ctx.getNodeParameter('binaryPropertyName', 0) as string;
+	const options = ctx.getNodeParameter('options', 0) as IDataObject;
+
+	// 1. Collect files from binary data
+	const files: { path: string; content: Buffer; md5: string }[] = [];
+	for (let i = 0; i < items.length; i++) {
+		const binaryData = ctx.helpers.assertBinaryData(i, binaryPropertyName);
+		const buffer = await ctx.helpers.getBinaryDataBuffer(i, binaryPropertyName);
+		if (buffer.length === 0) continue;
+		const dir = (binaryData.directory || '').replace(/^\/+/, '');
+		const fileName = binaryData.fileName || `file_${i}`;
+		files.push({
+			path: dir ? `${dir}/${fileName}` : fileName,
+			content: buffer,
+			md5: md5(buffer),
+		});
+	}
+
+	// 2. Optimize paths — strip common directory prefix
+	if (files.length > 1) {
+		const segments = files.map((f) => f.path.replace(/\\/g, '/').split('/'));
+		const minLen = Math.min(...segments.map((s) => s.length));
+		let strip = 0;
+		for (let i = 0; i < minLen - 1; i++) {
+			if (segments.every((s) => s[i] === segments[0][i])) strip++;
+			else break;
+		}
+		if (strip > 0) {
+			for (const f of files) {
+				f.path = f.path.replace(/\\/g, '/').split('/').slice(strip).join('/');
+			}
+		}
+	}
+
+	// 3. Build multipart body using Web API FormData
+	const form = new FormData();
+	for (const f of files) {
+		form.append(
+			'files[]',
+			// Uint8Array wrap: Buffer is not assignable to BlobPart in strict TS
+			new File([new Uint8Array(f.content)], f.path, { type: 'application/octet-stream' }),
+		);
+	}
+	form.append('checksums', JSON.stringify(files.map((f) => f.md5)));
+	form.append('via', 'n8n');
+	form.append('spa', 'true'); // server-side SPA detection + rewrite config
+	const labels = parseLabels(options.labels as string);
+	if (labels) form.append('labels', JSON.stringify(labels));
+
+	// 4. Resolve auth — API key for permanent deploys, agent token for public/temporary
+	let authorization: string;
+	if (apiKey) {
+		authorization = `Bearer ${apiKey}`;
+	} else {
+		// No API key — request a short-lived agent token for a public deployment
+		const { secret } = (await ctx.helpers.httpRequest({
+			method: 'POST',
+			url: `${API}/tokens/agent`,
+			body: {},
+			json: true,
+		})) as IDataObject;
+		authorization = `Bearer ${secret}`;
+	}
+
+	// 5. Upload
+	const result = await ctx.helpers.httpRequest({
+		method: 'POST',
+		url: `${API}/deployments`,
+		body: form,
+		headers: { Authorization: authorization } as IDataObject,
+	});
+
+	return [
+		{
+			json: toJson(result),
+			pairedItem: items.map((_, i) => ({ item: i })),
+		},
+	];
+}
+
+async function apiRequest(
+	ctx: IExecuteFunctions,
+	method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+	path: string,
+	body?: object,
+): Promise<IDataObject> {
+	return ctx.helpers.httpRequestWithAuthentication.call(ctx, 'shipstaticApi', {
+		method,
+		url: `${API}${path}`,
+		body,
+		json: true,
+	});
 }
 
 export class Shipstatic implements INodeType {
@@ -41,6 +143,8 @@ export class Shipstatic implements INodeType {
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
 		usableAsTool: true,
+		// Upload works without credentials (public deploy, 3-day expiry).
+		// All other operations require a free API key.
 		credentials: [
 			{
 				name: 'shipstaticApi',
@@ -327,7 +431,7 @@ export class Shipstatic implements INodeType {
 						'shipstaticApi',
 						{
 							method: 'GET',
-							url: 'https://api.shipstatic.com/deployments',
+							url: `${API}/deployments`,
 							json: true,
 						},
 					);
@@ -346,7 +450,7 @@ export class Shipstatic implements INodeType {
 						'shipstaticApi',
 						{
 							method: 'GET',
-							url: 'https://api.shipstatic.com/domains',
+							url: `${API}/domains`,
 							json: true,
 						},
 					);
@@ -364,44 +468,24 @@ export class Shipstatic implements INodeType {
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
-
-		// Upload works without credentials (claimable deployment, 3-day TTL).
-		// All other operations require an API key.
-		const ship = await this.getCredentials('shipstaticApi')
-			.then((c) => new Ship({ apiKey: c.apiKey as string }))
-			.catch(() => {
-				if (resource === 'deployment' && operation === 'upload') return new Ship({});
-				throw new NodeOperationError(
-					this.getNode(),
-					'This operation requires a ShipStatic API key. Add a ShipStatic credential to use it.',
-				);
-			});
-
 		const items = this.getInputData();
 		const returnData: INodeExecutionData[] = [];
 
-		// Upload: all input items → one deployment
+		// Upload works two ways:
+		// • With API key  → permanent deployment under your account
+		// • Without        → public deployment, expires in 3 days (no sign-up needed)
 		if (resource === 'deployment' && operation === 'upload') {
-			const binaryPropertyName = this.getNodeParameter('binaryPropertyName', 0) as string;
-			const options = this.getNodeParameter('options', 0) as IDataObject;
-			const tempDir = await mkdtemp(join(tmpdir(), 'n8n-shipstatic-'));
+			let apiKey: string | undefined;
 			try {
-				for (let i = 0; i < items.length; i++) {
-					const binaryData = this.helpers.assertBinaryData(i, binaryPropertyName);
-					const buffer = await this.helpers.getBinaryDataBuffer(i, binaryPropertyName);
-					const dir = (binaryData.directory || '').replace(/^\/+/, '');
-					const fullPath = join(tempDir, dir, binaryData.fileName || `file_${i}`);
-					await mkdir(dirname(fullPath), { recursive: true });
-					await writeFile(fullPath, buffer);
-				}
-				const result = await ship.deployments.upload(tempDir, {
-					labels: parseLabels(options.labels as string),
-					via: 'n8n',
-				});
-				returnData.push({
-					json: toJson(result),
-					pairedItem: items.map((_, i) => ({ item: i })),
-				});
+				const credentials = await this.getCredentials('shipstaticApi');
+				apiKey = credentials.apiKey as string;
+			} catch {
+				// No credentials — upload will use a temporary agent token instead
+			}
+
+			try {
+				const results = await handleUpload(this, items, apiKey);
+				returnData.push(...results);
 			} catch (error) {
 				if (this.continueOnFail()) {
 					const message = error instanceof Error ? error.message : 'An unexpected error occurred';
@@ -409,10 +493,18 @@ export class Shipstatic implements INodeType {
 				} else {
 					throw new NodeOperationError(this.getNode(), error as Error);
 				}
-			} finally {
-				await rm(tempDir, { recursive: true, force: true });
 			}
 			return [returnData];
+		}
+
+		// All other operations require credentials
+		try {
+			await this.getCredentials('shipstaticApi');
+		} catch {
+			throw new NodeOperationError(
+				this.getNode(),
+				'This operation requires a ShipStatic API key. Add a ShipStatic credential to use it.',
+			);
 		}
 
 		for (let i = 0; i < items.length; i++) {
@@ -420,8 +512,8 @@ export class Shipstatic implements INodeType {
 				if (resource === 'deployment') {
 					if (operation === 'getMany') {
 						const returnAll = this.getNodeParameter('returnAll', i) as boolean;
-						const response = await ship.deployments.list();
-						let results = response.deployments;
+						const response = await apiRequest(this, 'GET', '/deployments');
+						let results = (response.deployments ?? []) as IDataObject[];
 						if (!returnAll) {
 							const limit = this.getNodeParameter('limit', i) as number;
 							results = results.slice(0, limit);
@@ -431,31 +523,36 @@ export class Shipstatic implements INodeType {
 						}
 					} else if (operation === 'get') {
 						const id = this.getNodeParameter('deploymentId', i) as string;
-						const result = await ship.deployments.get(id);
+						const result = await apiRequest(this, 'GET', `/deployments/${encodeURIComponent(id)}`);
 						returnData.push({ json: toJson(result), pairedItem: { item: i } });
 					} else if (operation === 'update') {
 						const id = this.getNodeParameter('deploymentId', i) as string;
-						const labels = parseLabels(this.getNodeParameter('labels', i) as string) ?? [];
-						const result = await ship.deployments.set(id, { labels });
+						const labelValues = parseLabels(this.getNodeParameter('labels', i) as string) ?? [];
+						const result = await apiRequest(
+							this,
+							'PATCH',
+							`/deployments/${encodeURIComponent(id)}`,
+							{ labels: labelValues },
+						);
 						returnData.push({ json: toJson(result), pairedItem: { item: i } });
 					} else if (operation === 'delete') {
 						const id = this.getNodeParameter('deploymentId', i) as string;
-						await ship.deployments.remove(id);
+						await apiRequest(this, 'DELETE', `/deployments/${encodeURIComponent(id)}`);
 						returnData.push({ json: { success: true }, pairedItem: { item: i } });
 					}
 				} else if (resource === 'domain') {
 					if (operation === 'set') {
 						const name = this.getNodeParameter('domainName', i) as string;
-						const options = this.getNodeParameter('options', i) as IDataObject;
-						const result = await ship.domains.set(name, {
-							deployment: (options.deployment as string) || undefined,
-							labels: parseLabels(options.labels as string),
+						const domainOptions = this.getNodeParameter('options', i) as IDataObject;
+						const result = await apiRequest(this, 'PUT', `/domains/${encodeURIComponent(name)}`, {
+							deployment: (domainOptions.deployment as string) || undefined,
+							labels: parseLabels(domainOptions.labels as string),
 						});
 						returnData.push({ json: toJson(result), pairedItem: { item: i } });
 					} else if (operation === 'getMany') {
 						const returnAll = this.getNodeParameter('returnAll', i) as boolean;
-						const response = await ship.domains.list();
-						let results = response.domains;
+						const response = await apiRequest(this, 'GET', '/domains');
+						let results = (response.domains ?? []) as IDataObject[];
 						if (!returnAll) {
 							const limit = this.getNodeParameter('limit', i) as number;
 							results = results.slice(0, limit);
@@ -465,27 +562,37 @@ export class Shipstatic implements INodeType {
 						}
 					} else if (operation === 'get') {
 						const name = this.getNodeParameter('domainName', i) as string;
-						const result = await ship.domains.get(name);
+						const result = await apiRequest(this, 'GET', `/domains/${encodeURIComponent(name)}`);
 						returnData.push({ json: toJson(result), pairedItem: { item: i } });
 					} else if (operation === 'records') {
 						const name = this.getNodeParameter('domainName', i) as string;
-						const result = await ship.domains.records(name);
+						const result = await apiRequest(
+							this,
+							'GET',
+							`/domains/${encodeURIComponent(name)}/records`,
+						);
 						returnData.push({ json: toJson(result), pairedItem: { item: i } });
 					} else if (operation === 'validate') {
 						const name = this.getNodeParameter('domainName', i) as string;
-						const result = await ship.domains.validate(name);
+						const result = await apiRequest(this, 'POST', '/domains/validate', {
+							domain: name,
+						});
 						returnData.push({ json: toJson(result), pairedItem: { item: i } });
 					} else if (operation === 'verify') {
 						const name = this.getNodeParameter('domainName', i) as string;
-						const result = await ship.domains.verify(name);
+						const result = await apiRequest(
+							this,
+							'POST',
+							`/domains/${encodeURIComponent(name)}/verify`,
+						);
 						returnData.push({ json: toJson(result), pairedItem: { item: i } });
 					} else if (operation === 'delete') {
 						const name = this.getNodeParameter('domainName', i) as string;
-						await ship.domains.remove(name);
+						await apiRequest(this, 'DELETE', `/domains/${encodeURIComponent(name)}`);
 						returnData.push({ json: { success: true }, pairedItem: { item: i } });
 					}
 				} else if (resource === 'account') {
-					const result = await ship.whoami();
+					const result = await apiRequest(this, 'GET', '/account');
 					returnData.push({ json: toJson(result), pairedItem: { item: i } });
 				}
 			} catch (error) {

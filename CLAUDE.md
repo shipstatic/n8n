@@ -2,7 +2,7 @@
 
 Claude Code instructions for the **ShipStatic n8n Community Node**.
 
-**n8n-nodes-shipstatic** — n8n community node that exposes the ShipStatic SDK as workflow actions. Thin wrapper over `@shipstatic/ship`. Published to npm. **Maturity:** v0.2.x — Deployments + Domains (13 operations), optional credentials.
+**n8n-nodes-shipstatic** — n8n community node for the ShipStatic static hosting platform. Direct HTTP calls to the ShipStatic API — zero runtime dependencies. Published to npm. **Maturity:** v0.4.x — Deployments + Domains (13 operations), optional credentials, n8n Cloud verified.
 
 ## Architecture
 
@@ -20,45 +20,55 @@ credentials/
 
 ```bash
 pnpm build          # TypeScript → dist/ (uses n8n-node build)
-pnpm test --run     # All tests (17 tests, ~200ms)
+pnpm test --run     # All tests (~200ms)
 pnpm dev            # Dev mode with hot reload (icon won't show — see Known Gotchas)
 ```
 
 ## Core Patterns
 
-### SDK Wrapper — No Business Logic
+### Direct HTTP — No SDK, No Dependencies
 
-Every operation maps 1:1 to a single `@shipstatic/ship` SDK method. Same pattern as the MCP integration. The n8n layer handles only:
+Every operation is a direct HTTP call to `https://api.shipstatic.com`. Zero runtime dependencies — required for n8n Cloud verification. The n8n layer handles:
 
 - UI definition (resource/operation selectors, parameter fields)
-- Credential retrieval → `new Ship({ apiKey })`
-- Routing by resource + operation → SDK call
-- Binary data → temp directory materialization (upload)
+- Credential retrieval → Bearer token header
+- Routing by resource + operation → HTTP call via `httpRequestWithAuthentication`
+- Binary data → FormData multipart upload (using Web API globals)
 - Response shaping (list fan-out, void → `{ success: true }`)
 
-No HTTP calls, no auth logic, no domain validation. The SDK handles everything.
+### Operations (13 total)
 
-### Operations (13 total, matching MCP)
-
-| #   | Resource   | Operation        | SDK Call                                                                                                  |
-| --- | ---------- | ---------------- | --------------------------------------------------------------------------------------------------------- |
-| 1   | Deployment | Upload           | `ship.deployments.upload(tempDir, {labels, via: 'n8n'})` — accepts binary data, works without credentials |
-| 2   | Deployment | Get Many         | `ship.deployments.list()` → fan out `.deployments`                                                        |
-| 3   | Deployment | Get              | `ship.deployments.get(id)`                                                                                |
-| 4   | Deployment | Update           | `ship.deployments.set(id, {labels})`                                                                      |
-| 5   | Deployment | Delete           | `ship.deployments.remove(id)` → `{success: true}`                                                         |
-| 6   | Domain     | Create or Update | `ship.domains.set(name, {deployment?, labels?})`                                                          |
-| 7   | Domain     | Get Many         | `ship.domains.list()` → fan out `.domains`                                                                |
-| 8   | Domain     | Get              | `ship.domains.get(name)`                                                                                  |
-| 9   | Domain     | Get DNS Records  | `ship.domains.records(name)`                                                                              |
-| 10  | Domain     | Validate         | `ship.domains.validate(name)`                                                                             |
-| 11  | Domain     | Verify DNS       | `ship.domains.verify(name)`                                                                               |
-| 12  | Domain     | Delete           | `ship.domains.remove(name)` → `{success: true}`                                                           |
-| 13  | Account    | Get              | `ship.whoami()`                                                                                           |
+| #   | Resource   | Operation        | HTTP Call                                              |
+| --- | ---------- | ---------------- | ------------------------------------------------------ |
+| 1   | Deployment | Upload           | `POST /deployments` multipart FormData (optional auth) |
+| 2   | Deployment | Get Many         | `GET /deployments` → fan out `.deployments`            |
+| 3   | Deployment | Get              | `GET /deployments/{id}`                                |
+| 4   | Deployment | Update           | `PATCH /deployments/{id}` body `{labels}`              |
+| 5   | Deployment | Delete           | `DELETE /deployments/{id}` → `{success: true}`         |
+| 6   | Domain     | Create or Update | `PUT /domains/{name}` body `{deployment?, labels?}`    |
+| 7   | Domain     | Get Many         | `GET /domains` → fan out `.domains`                    |
+| 8   | Domain     | Get              | `GET /domains/{name}`                                  |
+| 9   | Domain     | Get DNS Records  | `GET /domains/{name}/records`                          |
+| 10  | Domain     | Validate         | `POST /domains/validate` body `{domain: name}`         |
+| 11  | Domain     | Verify DNS       | `POST /domains/{name}/verify`                          |
+| 12  | Domain     | Delete           | `DELETE /domains/{name}` → `{success: true}`           |
+| 13  | Account    | Get              | `GET /account`                                         |
 
 ### Binary Data Upload
 
-Upload accepts binary data from upstream nodes (e.g. Read Binary Files, HTTP Request). Each input item becomes one file in the deployment — all items are collected, written to a temp directory (preserving `directory`/`fileName` from binary metadata), and deployed as a single deployment. Temp directory is cleaned up in a `finally` block. This follows n8n's standard pattern: every first-party upload node (S3, Google Drive, Slack) accepts binary data, not filesystem paths.
+Upload uses Web API `FormData` and `File` globals (Node 22+, no imports needed — passes n8n Cloud ESLint scanner). Each input item becomes one file in the deployment. All items are collected into a single `FormData`, with paths built from `binaryData.directory` + `binaryData.fileName`. Common directory prefixes are stripped for clean deployment URLs.
+
+The multipart body includes:
+
+- `files[]` — one File entry per binary item
+- `checksums` — JSON array of MD5 hashes (via `node:crypto`)
+- `via` — always `"n8n"`
+- `spa` — always `"true"` (server-side SPA detection)
+- `labels` — optional JSON array
+
+### Upload Auth — Optional Credentials
+
+Upload works without credentials. When no API key is configured, the node fetches a short-lived agent token from `POST /tokens/agent` and uses that as the Bearer token. All other operations require an API key and use `httpRequestWithAuthentication`.
 
 ### pairedItem
 
@@ -68,27 +78,21 @@ Every `returnData.push()` includes `pairedItem: { item: i }` to enable n8n's dat
 
 `deploymentId` and `domainName` (for existing domains) use `loadOptions` to populate dropdowns from the API. Two loader methods in `methods.loadOptions`:
 
-- `getDeployments` — `GET /deployments` via `httpRequestWithAuthentication` (uses credential's Bearer header)
+- `getDeployments` — `GET /deployments` via `httpRequestWithAuthentication`
 - `getDomains` — `GET /domains` via `httpRequestWithAuthentication`
 
-Both return empty arrays on error (user can still type manually via expression). The `domainName` field is split into two: one with loader (get, records, verify, delete — existing domains) and one without (set, validate — new/any domain names). The `Deployment` field inside the Domain Set options collection also uses `getDeployments`.
+Both return empty arrays on error (user can still type manually via expression).
 
 ### Options Collections
 
-Optional parameters are grouped into `type: 'collection'` fields named `options`, following the first-party n8n pattern:
+Optional parameters are grouped into `type: 'collection'` fields named `options`:
 
 - **Upload**: Labels → accessed via `this.getNodeParameter('options', i) as IDataObject`
 - **Domain Set**: Deployment, Labels → same pattern
 
-Required parameters (Input Binary Field, Deployment ID, Domain Name, Labels for Update) remain top-level fields.
-
 ### Return All / Limit
 
-Both "Get Many" operations (deployments, domains) include `returnAll` (boolean) and `limit` (number, shown when returnAll=false). Client-side slicing via `.slice(0, limit)` — the API doesn't paginate.
-
-### Deployment Tracking
-
-`deployments.upload` sets `via: 'n8n'` — matching MCP's `via: 'mcp'` and CLI's `via: 'cli'`.
+Both "Get Many" operations include `returnAll` (boolean) and `limit` (number). Client-side slicing via `.slice(0, limit)` — the API doesn't paginate.
 
 ### Error Handling
 
@@ -96,57 +100,28 @@ Uses n8n's standard pattern: `continueOnFail()` returns `{ error: message }` ite
 
 ### Labels
 
-Labels are comma-separated strings in the UI, parsed to `string[]` by `parseLabels()`. Returns `undefined` for empty input (not empty array) to distinguish "not provided" from "clear all" per SDK conventions.
-
-### Optional Credentials
-
-The credential is `required: false`. Upload works without credentials (claimable deployments, 3-day TTL). All other operations require an API key.
-
-In `execute()`, `this.getCredentials('shipstaticApi')` resolves to a Ship instance via `.then()`. If no credential is configured, `.catch()` either creates a keyless Ship (upload) or throws `NodeOperationError` with guidance (all other operations).
-
-`ShipstaticApi` credential provides the API key. The `authenticate` property (Bearer header) is used by the `test` property to verify credentials — `GET /account` with the Bearer token. The SDK handles auth separately via `new Ship({ apiKey })`.
-
-### Verified Node Status
-
-n8n's verification guidelines prohibit runtime dependencies in verified community nodes. Our node depends on `@shipstatic/ship` (required for upload: file processing, MD5, SPA detection, multipart). We publish as **unverified**. This is deliberate — the SDK wrapper is the correct architecture for our use case.
+Labels are comma-separated strings in the UI, parsed to `string[]` by `parseLabels()`. Returns `undefined` for empty input (not empty array) to distinguish "not provided" from "clear all".
 
 ## Testing
 
 ```bash
-pnpm test --run     # All tests (17 tests, ~200ms)
+pnpm test --run     # All tests (~200ms)
 ```
 
-```
-tests/
-└── Shipstatic.node.test.ts   # Business logic tests (17 tests)
-```
-
-Tests cover business logic only — not n8n framework scaffolding:
+Tests mock `helpers.httpRequest` and `helpers.httpRequestWithAuthentication` — no real HTTP calls. Coverage:
 
 - `parseLabels` — comma parsing, trimming, empty filtering
-- Credential resolution — with key, without key + upload, without key + other
-- Upload — `via: 'n8n'`, label forwarding, multi-item collection, directory structure, temp cleanup on error
-- Error handling — continueOnFail for both upload (batch) and per-item operations
+- Credential resolution — with key, without key + upload (agent token), without key + other (error)
+- Upload — FormData fields (via, spa, labels), multi-item collection, path optimization, empty file skip, error handling
 - List slicing — returnAll vs limit
 - Void operations — `{ success: true }` convention
 - Domain set — empty string → undefined coercion
 
-### Manual Testing
-
-1. **Via `pnpm dev`** — hot-reload dev mode, icon won't render (see below), but all operations work
-2. **Via real install** — `pnpm build && npm pack`, then install the `.tgz` into `~/.n8n/custom/`
-
-```bash
-pnpm build && npm pack
-cd ~/.n8n/custom && npm init -y && npm install /path/to/n8n-nodes-shipstatic-0.2.0.tgz
-npx n8n
-```
-
 ## Adding New Operations
 
-1. Add operation entry to the relevant resource's `operation` options array
+1. Add operation entry to the relevant resource's `operation` options array (alphabetical order)
 2. Add parameter fields with `displayOptions` to show/hide per operation
-3. Add SDK call in the `execute()` method's resource/operation routing
+3. Add HTTP call in the `execute()` method's resource/operation routing via `apiRequest()`
 4. List operations: fan out the array into separate n8n items
 5. Void operations: return `{ success: true }`
 
@@ -154,17 +129,15 @@ npx n8n
 
 ### `pnpm dev` Does Not Render `file:` Icons
 
-`n8n-node dev` creates a symlink from `~/.n8n-node-cli/.n8n/custom/node_modules/n8n-nodes-shipstatic` → source directory. n8n's icon serving does not resolve `file:` references through symlinks, so the icon always shows as the generic fallback in dev mode. This is a known n8n limitation (see [#22452](https://github.com/n8n-io/n8n/issues/22452), [#12944](https://github.com/n8n-io/n8n/issues/12944)).
-
-**The icon works correctly when installed from npm or from a `.tgz` (real install into `~/.n8n/custom/`).** Verified 2026-03-11.
+`n8n-node dev` creates a symlink that n8n's icon serving doesn't resolve. The icon always shows as the generic fallback in dev mode. **Works correctly when installed from npm.**
 
 ### SVG Icon Requirements
 
-The SVG must be simple — no `<filter>`, `<clipPath>`, `<mask>`, `<style>`, or embedded CSS. n8n sanitizes SVGs and strips these elements. The current `shipstatic.svg` is a flat version of the logo (orange rect + white paths, no drop shadows). Do not re-export from the original Figma/design file without stripping filters first.
+No `<filter>`, `<clipPath>`, `<mask>`, `<style>`, or embedded CSS. n8n sanitizes SVGs and strips these.
 
 ### `~/.n8n/custom/` Needs a `package.json`
 
-When manually installing a node into `~/.n8n/custom/`, you must `npm init -y` first. Without a `package.json`, npm silently installs packages into a parent directory instead of `~/.n8n/custom/node_modules/`.
+When manually installing, `npm init -y` first. Without it, npm installs into a parent directory.
 
 ---
 
