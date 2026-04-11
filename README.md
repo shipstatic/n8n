@@ -28,7 +28,7 @@ Add a **ShipStatic** node to your workflow. No credentials to configure.
 
 1. Set Resource to **Deployment**, Operation to **Deploy**
 2. Connect binary files from an upstream node (e.g. HTTP Request, Google Drive, Convert to File)
-3. Run — you get a live, shareable URL on `*.shipstatic.com`
+3. Run — you get a live URL on `*.shipstatic.com`
 
 **From text content** (Binary File toggle OFF):
 
@@ -36,9 +36,9 @@ Add a **ShipStatic** node to your workflow. No credentials to configure.
 2. Paste or wire your HTML into **File Content**
 3. Run — deployed as `index.html` by default (customizable via **File Name**)
 
-That's it. Your site is live instantly. No sign-up, no API key, no configuration.
+That's it. Your site is live instantly. No API key, no sign-up, no configuration.
 
-Deployments without an API key are public and expire in 3 days.
+Deployments without an API key are public and expire in 3 days. The output includes a **claim URL** — visit it to keep the site permanently.
 
 ## All Operations — Free API Key
 
