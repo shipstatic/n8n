@@ -6,8 +6,9 @@ import type {
 	INodePropertyOptions,
 	INodeType,
 	INodeTypeDescription,
+	JsonObject,
 } from 'n8n-workflow';
-import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 import { createHash } from 'node:crypto';
 
 const API = 'https://api.shipstatic.com';
@@ -99,7 +100,7 @@ async function handleDeploy(
 		authorization = `Bearer ${apiKey}`;
 	} else {
 		// No API key — request a short-lived agent token for a public deployment
-		const tokenResponse = await ctx.helpers.request({
+		const tokenResponse = await rawRequest(ctx, {
 			method: 'POST',
 			uri: `${API}/tokens/agent`,
 			headers: { 'Content-Type': 'application/json' },
@@ -110,7 +111,7 @@ async function handleDeploy(
 	}
 
 	// 5. Deploy
-	const result = await ctx.helpers.request({
+	const result = await rawRequest(ctx, {
 		method: 'POST',
 		uri: `${API}/deployments`,
 		headers: { Authorization: authorization },
@@ -126,18 +127,33 @@ async function handleDeploy(
 	];
 }
 
+// All HTTP is funnelled through these two helpers. They wrap transport errors
+// in NodeApiError at the single point of I/O so execute() can stay trivial —
+// this is the dominant idiom in n8n core nodes (Github, Notion, Slack).
 async function apiRequest(
 	ctx: IExecuteFunctions,
 	method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
 	path: string,
 	body?: object,
 ): Promise<IDataObject> {
-	return ctx.helpers.httpRequestWithAuthentication.call(ctx, 'shipstaticApi', {
-		method,
-		url: `${API}${path}`,
-		body,
-		json: true,
-	});
+	try {
+		return await ctx.helpers.httpRequestWithAuthentication.call(ctx, 'shipstaticApi', {
+			method,
+			url: `${API}${path}`,
+			body,
+			json: true,
+		});
+	} catch (error) {
+		throw new NodeApiError(ctx.getNode(), error as JsonObject);
+	}
+}
+
+async function rawRequest(ctx: IExecuteFunctions, options: IDataObject): Promise<any> {
+	try {
+		return await ctx.helpers.request(options);
+	} catch (error) {
+		throw new NodeApiError(ctx.getNode(), error as JsonObject);
+	}
 }
 
 export class Shipstatic implements INodeType {
@@ -536,7 +552,7 @@ export class Shipstatic implements INodeType {
 					const message = error instanceof Error ? error.message : 'An unexpected error occurred';
 					returnData.push({ json: { error: message }, pairedItem: { item: 0 } });
 				} else {
-					throw new NodeOperationError(this.getNode(), error as Error);
+					throw error;
 				}
 			}
 			return [returnData];
@@ -646,7 +662,8 @@ export class Shipstatic implements INodeType {
 					returnData.push({ json: { error: message }, pairedItem: { item: i } });
 					continue;
 				}
-				throw new NodeOperationError(this.getNode(), error as Error, { itemIndex: i });
+				if ((error as any).context) (error as any).context.itemIndex = i;
+				throw error;
 			}
 		}
 
