@@ -10,6 +10,14 @@ vi.mock('n8n-workflow', () => ({
 			this.name = 'NodeOperationError';
 		}
 	},
+	NodeApiError: class extends Error {
+		httpCode: string | null = null;
+		constructor(_node: any, errorResponse: any, opts?: any) {
+			super(opts?.message ?? errorResponse?.message ?? 'API error');
+			this.name = 'NodeApiError';
+			this.httpCode = errorResponse?.httpCode ?? errorResponse?.statusCode ?? null;
+		}
+	},
 }));
 
 function createContext(params: Record<string, any>, credentials?: Record<string, any> | null) {
@@ -359,6 +367,56 @@ describe('void operations', () => {
 
 describe('error handling', () => {
 	beforeEach(() => vi.clearAllMocks());
+
+	it('wraps HTTP failures in NodeApiError to preserve status code in the n8n UI', async () => {
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'get',
+			deploymentId: 'test.shipstatic.com',
+		});
+		const httpError: any = new Error('Not found');
+		httpError.httpCode = '404';
+		ctx.helpers.httpRequestWithAuthentication.mockRejectedValue(httpError);
+
+		await expect(node.execute.call(ctx)).rejects.toMatchObject({
+			name: 'NodeApiError',
+			httpCode: '404',
+		});
+	});
+
+	it('wraps deploy HTTP failures in NodeApiError', async () => {
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'deploy',
+			binaryData: true,
+			binaryPropertyName: 'data',
+			options: {},
+		});
+		const httpError: any = new Error('Deploy rejected');
+		httpError.httpCode = '413';
+		ctx.helpers.request.mockRejectedValue(httpError);
+
+		await expect(node.execute.call(ctx)).rejects.toMatchObject({
+			name: 'NodeApiError',
+			httpCode: '413',
+		});
+	});
+
+	it('does not double-wrap NodeOperationError thrown from handleDeploy', async () => {
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'deploy',
+			binaryData: true,
+			binaryPropertyName: 'data',
+			options: {},
+		});
+		ctx.helpers.getBinaryDataBuffer.mockResolvedValue(Buffer.alloc(0));
+
+		await expect(node.execute.call(ctx)).rejects.toMatchObject({
+			name: 'NodeOperationError',
+			message: expect.stringContaining('No files to deploy'),
+		});
+	});
 
 	it('returns error item for per-item operations when continueOnFail is enabled', async () => {
 		const ctx = createContext({
