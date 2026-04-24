@@ -501,6 +501,8 @@ export class Shipstatic implements INodeType {
 						value: d.deployment,
 					}));
 				} catch {
+					// Best-effort: return [] so the dropdown stays quiet before
+					// credentials are configured, instead of surfacing an error.
 					return [];
 				}
 			},
@@ -520,6 +522,8 @@ export class Shipstatic implements INodeType {
 						value: d.domain,
 					}));
 				} catch {
+					// Best-effort: return [] so the dropdown stays quiet before
+					// credentials are configured, instead of surfacing an error.
 					return [];
 				}
 			},
