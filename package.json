@@ -24,6 +24,7 @@
 		"type": "git",
 		"url": "https://github.com/shipstatic/n8n.git"
 	},
+	"homepage": "https://github.com/shipstatic/n8n#readme",
 	"main": "dist/nodes/Shipstatic/Shipstatic.node.js",
 	"scripts": {
 		"dev": "n8n-node dev",
