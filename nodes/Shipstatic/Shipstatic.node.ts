@@ -164,8 +164,7 @@ export class Shipstatic implements INodeType {
 		group: ['output'],
 		version: 1,
 		subtitle: '={{$parameter["resource"] + ": " + $parameter["operation"]}}',
-		description:
-			'Free, no account needed — deploy static websites, landing pages, and prototypes instantly',
+		description: 'Deploy static sites and HTML output to a live URL — free, no account needed',
 		defaults: {
 			name: 'ShipStatic',
 		},
@@ -206,7 +205,7 @@ export class Shipstatic implements INodeType {
 					{
 						name: 'Deploy',
 						value: 'deploy',
-						description: 'Publish files and get a live URL instantly — no account needed',
+						description: 'Publish files and get a live URL',
 						action: 'Deploy a site',
 					},
 					{

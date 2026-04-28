@@ -11,14 +11,13 @@
 		]
 	},
 	"alias": [
-		"ship",
+		"deploy",
+		"publish",
 		"static",
 		"hosting",
-		"deploy",
 		"website",
-		"publish",
-		"web",
-		"landing page",
-		"prototype"
+		"html",
+		"netlify",
+		"vercel"
 	]
 }
