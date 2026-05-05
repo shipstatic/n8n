@@ -40,6 +40,8 @@ That's it. Your site is live instantly. No API key, no sign-up, no configuration
 
 Deployments without an API key are public and expire in 3 days. The output includes a **claim URL** — visit it to keep the site permanently.
 
+Want a private site? Add a **Password** under the Deploy operation's Options (6–128 characters; whitespace significant). Visitors will be prompted to unlock before viewing, including on any custom domains pointing at the deployment.
+
 ## All Operations — Free API Key
 
 For permanent deployments and full control over your sites and domains, add a free API key:
@@ -50,23 +52,25 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 ### Deployments
 
-| Operation  | Description                                                                |
-| ---------- | -------------------------------------------------------------------------- |
-| **Deploy** | Publish files and get a live URL instantly                                 |
-| **Get**    | Get deployment details including URL, status, file count, size, and labels |
-| **List**   | List all deployments with their URLs, status, and labels                   |
-| **Remove** | Permanently remove a deployment and all its files                          |
-| **Set**    | Update the labels on a deployment for organization and filtering           |
+| Operation  | Description                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| **Deploy** | Publish files and get a live URL instantly                                                             |
+| **Get**    | Get deployment details including URL, status, file count, size, labels, and password protection state |
+| **List**   | List all deployments with their URLs, status, labels, and password protection state                   |
+| **Remove** | Permanently remove a deployment and all its files                                                      |
+| **Set**    | Update labels on a deployment (replaces all existing labels)                                           |
 
 ### Domains
 
 | Operation    | Description                                                                     |
 | ------------ | ------------------------------------------------------------------------------- |
+| **DNS**      | Look up which DNS provider hosts a domain (e.g. Cloudflare, Namecheap)          |
 | **Get**      | Get domain details including linked deployment, verification status, and labels |
-| **List**     | List all domains with their linked deployments and verification status          |
+| **List**     | List all domains with their linked deployment and verification status           |
 | **Records**  | Get the DNS records you need to configure at your DNS provider                  |
 | **Remove**   | Permanently disconnect and remove a custom domain                               |
-| **Set**      | Connect a custom domain to your site, switch deployments, or update labels      |
+| **Set**      | Create or update a custom domain — reserve, link, switch deployments, or update labels |
+| **Share**    | Get a shareable setup hash so someone else can view the required DNS records    |
 | **Validate** | Check if a domain name is valid and available before connecting it              |
 | **Verify**   | Check if DNS is configured correctly after you set up the records               |
 
@@ -90,9 +94,14 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 Use an n8n **Schedule Trigger** to redeploy a site on a recurring basis — useful for sites that pull content from external sources.
 
-## Dynamic Dropdowns
+## Picking Deployments and Domains
 
-When selecting a deployment or domain, the node loads your existing resources as a dropdown for quick selection. You can also switch to expression mode to use dynamic values from previous nodes.
+Deployment and Domain fields use n8n's **Resource Locator** with two modes:
+
+- **From List** — search-as-you-type through your existing deployments or domains
+- **By Hostname** / **By Name** — type the value directly (useful for new domains via Set/Validate, or for piping in dynamic values from previous nodes)
+
+You can also switch any field to **Expression** mode to use values from upstream nodes.
 
 ## AI Agent Support
 
