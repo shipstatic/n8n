@@ -63,7 +63,7 @@ For permanent deployments and full control over your sites and domains, add a fr
 | Operation    | Description                                                                     |
 | ------------ | ------------------------------------------------------------------------------- |
 | **Get**      | Get domain details including linked deployment, verification status, and labels |
-| **List**     | List all domains with their linked deployments and verification status          |
+| **List**     | List all domains with their linked deployment and verification status           |
 | **Records**  | Get the DNS records you need to configure at your DNS provider                  |
 | **Remove**   | Permanently disconnect and remove a custom domain                               |
 | **Set**      | Connect a custom domain to your site, switch deployments, or update labels      |

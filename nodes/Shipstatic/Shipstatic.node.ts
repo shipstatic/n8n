@@ -255,7 +255,7 @@ export class Shipstatic implements INodeType {
 					{
 						name: 'List',
 						value: 'list',
-						description: 'List all domains with their linked deployments and verification status',
+						description: 'List all domains with their linked deployment and verification status',
 						action: 'List all domains',
 					},
 					{
