@@ -1,8 +1,15 @@
 name: Publish
 
+# Triggered when a version tag (`v*`) is pushed — typically by `pnpm run release`,
+# which uses release-it to bump the version, commit, tag, push, and create a
+# GitHub Release with auto-generated notes. The npm publish itself happens here
+# so a) the publish artifact is built in a clean CI environment, and b) the git
+# tag and the npm version are guaranteed to match.
+
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -23,7 +30,11 @@ jobs:
         with:
           version: 10.12.4
 
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm test --run
 
       - run: pnpm run build
 
