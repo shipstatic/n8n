@@ -93,6 +93,8 @@ async function handleDeploy(
 	};
 	const labels = parseLabels(options.labels as string);
 	if (labels) formData.labels = JSON.stringify(labels);
+	const password = (options.password as string | undefined)?.trim();
+	if (password) formData.password = password;
 
 	// 4. Resolve auth — API key for permanent deploys, agent token for public/temporary
 	let authorization: string;
@@ -447,6 +449,15 @@ export class Shipstatic implements INodeType {
 						default: '',
 						placeholder: 'production, v2',
 						description: 'Comma-separated labels',
+					},
+					{
+						displayName: 'Password',
+						name: 'password',
+						type: 'string',
+						typeOptions: { password: true },
+						default: '',
+						description:
+							'Optional password to protect the deployment. Visitors must enter it to view the site. Length 6 to 128 characters.',
 					},
 				],
 			},

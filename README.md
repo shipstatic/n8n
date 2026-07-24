@@ -52,7 +52,7 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 | Operation  | Description                                                                |
 | ---------- | -------------------------------------------------------------------------- |
-| **Deploy** | Publish files and get a live URL instantly                                 |
+| **Deploy** | Publish files and get a live URL instantly (optionally password-protected) |
 | **Get**    | Get deployment details including URL, status, file count, size, and labels |
 | **List**   | List all deployments with their URLs, status, and labels                   |
 | **Remove** | Permanently remove a deployment and all its files                          |

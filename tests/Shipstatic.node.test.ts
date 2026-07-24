@@ -139,6 +139,36 @@ describe('deploy', () => {
 		expect(fd.labels).toBe('["prod","v2"]');
 	});
 
+	it('forwards a non-empty password to formData', async () => {
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'deploy',
+			binaryData: true,
+			binaryPropertyName: 'data',
+			options: { password: 'hunter2!' },
+		});
+
+		await node.execute.call(ctx);
+
+		const fd = getFormData(ctx);
+		expect(fd.password).toBe('hunter2!');
+	});
+
+	it('omits password when blank or whitespace', async () => {
+		const ctx = createContext({
+			resource: 'deployment',
+			operation: 'deploy',
+			binaryData: true,
+			binaryPropertyName: 'data',
+			options: { password: '   ' },
+		});
+
+		await node.execute.call(ctx);
+
+		const fd = getFormData(ctx);
+		expect(fd.password).toBeUndefined();
+	});
+
 	it('collects multiple items into one deployment', async () => {
 		const ctx = createContext({
 			resource: 'deployment',
