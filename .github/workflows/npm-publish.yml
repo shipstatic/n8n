@@ -5,6 +5,9 @@ name: Publish
 # GitHub Release with auto-generated notes. The npm publish itself happens here
 # so a) the publish artifact is built in a clean CI environment, and b) the git
 # tag and the npm version are guaranteed to match.
+#
+# Tag-driven releases are branch-agnostic: the version decides the channel — a
+# prerelease version (any `-` suffix) publishes under the `beta` dist-tag.
 
 on:
   push:
@@ -26,26 +29,49 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - uses: pnpm/action-setup@v4
+      # Publish exactly once per version: skip when this version is already on
+      # the registry (re-pushed tags and re-runs are safe no-ops), and derive
+      # the dist-tag from the version so a prerelease can never land on `latest`.
+      - id: version
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION already on the registry — nothing to publish"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            if [[ "$VERSION" == *-* ]]; then TAG=beta; else TAG=latest; fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.version.outputs.publish == 'true'
+        uses: pnpm/action-setup@v4
         with:
           version: 10.12.4
 
-      - run: pnpm install --frozen-lockfile
+      - if: steps.version.outputs.publish == 'true'
+        run: pnpm install --frozen-lockfile
 
-      - run: pnpm lint
+      - if: steps.version.outputs.publish == 'true'
+        run: pnpm lint
 
-      - run: pnpm test --run
+      - if: steps.version.outputs.publish == 'true'
+        run: pnpm test --run
 
-      - run: pnpm run build
+      - if: steps.version.outputs.publish == 'true'
+        run: pnpm run build
 
-      - run: pnpm publish --access public --no-git-checks --provenance
+      - if: steps.version.outputs.publish == 'true'
+        run: pnpm publish --access public --no-git-checks --provenance --tag "${{ steps.version.outputs.tag }}"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
 
-      - if: success()
+      - if: steps.version.outputs.publish == 'true'
         uses: slackapi/slack-github-action@v1.23.0
         with:
-          payload: '{"text":"✅ n8n-nodes-shipstatic published successfully"}'
+          payload: '{"text":"✅ n8n-nodes-shipstatic ${{ steps.version.outputs.version }} published (${{ steps.version.outputs.tag }})"}'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
