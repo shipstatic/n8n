@@ -1,23 +1,14 @@
 {
-	"node": "n8n-nodes-shipstatic.shipstatic",
-	"nodeVersion": "1.0",
-	"codexVersion": "1.0",
-	"categories": ["Development"],
-	"resources": {
-		"primaryDocumentation": [
-			{
-				"url": "https://docs.shipstatic.com"
-			}
-		]
-	},
-	"alias": [
-		"deploy",
-		"publish",
-		"static",
-		"hosting",
-		"website",
-		"html",
-		"netlify",
-		"vercel"
-	]
+  "node": "n8n-nodes-shipstatic.shipstatic",
+  "nodeVersion": "1.0",
+  "codexVersion": "1.0",
+  "categories": ["Development"],
+  "resources": {
+    "primaryDocumentation": [
+      {
+        "url": "https://docs.shipstatic.com"
+      }
+    ]
+  },
+  "alias": ["deploy", "publish", "static", "hosting", "website", "html", "netlify", "vercel"]
 }
