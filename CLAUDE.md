@@ -67,11 +67,31 @@ platform contracts rather than style:
 `CLAUDE.md`, "The Constellation Law"). `tests/contract.test.ts` holds every one:
 `API` against `DEFAULT_API`, `VIA` against `DeploymentVia.N8N`, the README's
 durations against `PUBLIC_DEPLOYMENT_TTL_SECONDS`, the operation catalogue
-against the node's own `options` arrays, and — the fence the manifest cannot be
-— the BUILT `dist/**/*.js` requiring nothing outside `n8n-workflow` and node
-builtins. `n8n-node build` is a `tsc` transpile, not a bundle, so a
-devDependency that reached a value position would install fine here and be
-MODULE_NOT_FOUND for every user.
+against the node's own `options` arrays, the `my.shipstatic.com/api-key` link
+against `MY_API_KEY_URL`, `WireError` against `ErrorResponse`, `SPA_CONFIG` /
+`SHIP_JSON` against `SPA_DEFAULT_CONFIG` and its filename, the
+`Idempotency-Key` header against `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`, the
+password range against `PASSWORD_CONSTRAINTS`, the claim promise, the
+destructive-op hints, the credential shape, the README contract — and, the
+fence the manifest cannot be, the BUILT `dist/**/*.js` requiring nothing
+outside `n8n-workflow` and node builtins. `n8n-node build` is a `tsc`
+transpile, not a bundle, so a devDependency that reached a value position
+would install fine here and be MODULE_NOT_FOUND for every user.
+
+**Examined and REFUSED, recorded so nobody re-proposes them:** no codegen —
+deriving the ledger from types at build would make drift impossible instead of
+red, but for ~10 scalars and two small tables a fence that fails beats a
+generator plus a build stage plus a drift guard (revisit only if the ledger
+triples). No `@shipstatic/types/wire` subpath — the sandbox forbids this node
+importing it regardless, and no second hand-rolled client exists.
+`parseLabels` is NOT types' `deserializeLabels` — different domains (UI
+comma-split with absence semantics vs DB JSON-string with always-array
+semantics); do not "unify" them. `errorType` stays this node's word for the
+wire's `error` field — n8n's UI owns the `error` key; idiom, not drift. Two
+fences were likewise DECLINED with the rule as the reason: a `DEPLOY_FIELDS`
+row fence (loud, live-proven — a wrong field name fails every deploy on its
+first try) and a credential-placeholder prefix fence (a prefix change is a
+deliberate platform-wide break, never drift).
 
 ### Two linters, and only one of them is a linter
 
@@ -113,6 +133,13 @@ Both wrap transport errors in `NodeApiError` at the I/O boundary so the rest of 
 ### Operations (15 total)
 
 Operation names mirror the CLI/SDK/MCP resource verbs: get, list, set, delete, records, dns, share, validate, verify. **`delete`, never `remove`** — the 2026-07 rename swept the SDK (`delete()`), the CLI (`ship … delete`) and the MCP (`*_delete`); n8n was the last surface off it, and `tests/contract.test.ts` holds it there. The deploy verb diverges intentionally — n8n surfaces "Deploy" as the user-facing action (matching the `ship <path>` shortcut UX), while the CLI/SDK method and MCP tool are named `upload`. Same operation, different label.
+
+The node ships `version: 1` as a scalar, and the non-use of n8n's node-version
+machinery is a decision, not an omission: `version: [1, 2]` arrays are for
+platforms with users to migrate, and 1.0 was a clean break for a handful of
+users (the credential field renames, `remove` → `delete`, the anonymous-deploy
+mechanism change) under the pre-launch clean-break law. Record the non-use,
+don't build it.
 
 | #   | Resource   | Operation | HTTP Call                                              |
 | --- | ---------- | --------- | ------------------------------------------------------ |
@@ -340,7 +367,7 @@ This is the n8n-side equivalent of MCP's `You MUST confirm` and `always show the
 
 ```bash
 pnpm test --run     # All tests (~250ms)
-pnpm coverage       # …plus the ratchet: 100 statements/functions/lines, 97.7 branches
+pnpm coverage       # …plus the ratchet: 100 statements/functions/lines, 98.2 branches
 ```
 
 The default tier mocks `helpers.request` and `helpers.httpRequestWithAuthentication` — no real HTTP calls. Two files sit beside it:
@@ -348,7 +375,7 @@ The default tier mocks `helpers.request` and `helpers.httpRequestWithAuthenticat
 - **`tests/contract.test.ts`** — the fences (see "The sandbox contract"). They hold what a percentage cannot: restated platform values, the operation catalogue, the published README, and the built artifact's imports.
 - **`tests/live.test.ts`** — the same `execute()` against a real API, opt-in via `SHIP_API_URL`. It is the only tier that can observe the platform rather than the node's self-consistency, and it is what proved the `/tokens/agent` deletion, the claim/expiry pass-through, `via` landing in the database, and the deploy-token 401.
 
-The branch ratchet is 97.7 for exactly three arms — the implicit `else` on each `operation` chain in `execute()`, unreachable because n8n only ever passes a value from the `options` array it rendered. Named in `vitest.config.ts`, not rounded away.
+The branch ratchet is 98.2 for exactly the implicit `else` arms on the `operation` chains in `execute()`, unreachable because n8n only ever passes a value from the `options` array it rendered. Named in `vitest.config.ts`, not rounded away.
 
 ### Organization
 
@@ -357,15 +384,21 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 | Describe | Surface tested |
 |---|---|
 | `parseLabels` | Pure helper |
+| `stripCommonPrefix` | Pure helper |
+| `extractResourceLocatorValue` | Pure helper |
 | `Deploy — authentication` | `handleDeploy` credential resolution + the anonymous door |
 | `Deploy — file collection & formData` | `handleDeploy` file pipeline (binary/text, paths, MD5, payload) |
+| `Deploy — SPA routing` | `handleDeploy` SPA detection + the `ship.json` append |
+| `Deploy — idempotency` | `handleDeploy` `Idempotency-Key` threading |
 | `Deploy — error handling` | `handleDeploy` failure paths (empty files, rejected token, rate limit, continueOnFail trace) |
 | `Deployment operations` | `execute()` routing for the Deployment resource |
 | `Domain operations` | `execute()` routing for the Domain resource (incl. set merge-upsert semantics) |
 | `Auth gate for non-deploy operations` | `execute()` credential gate |
 | `Global vs per-item iteration` | `execute()` list/account run-once + list controls (returnAll/limit) |
+| `Pagination` | `fetchList()` cursor walk (returnAll / limit / empty-page termination) |
 | `Error handling — NodeApiError & continueOnFail` | `execute()` per-item error wrapping |
 | `listSearch — credential probe & filtering` | `methods.listSearch` (resource locator backends) |
+| `listSearch — pagination` | `searchPage()` `paginationToken` threading |
 
 ### Adding new coverage
 
