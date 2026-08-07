@@ -20,11 +20,13 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { ErrorResponse } from '@shipstatic/types';
 import {
   DEFAULT_API,
   DEPLOYMENT_CONFIG_FILENAME,
   DeploymentVia,
   IDEMPOTENCY_KEY_CONSTRAINTS,
+  MY_API_KEY_URL,
   PASSWORD_CONSTRAINTS,
   PUBLIC_DEPLOYMENT_TTL_SECONDS,
   SPA_DEFAULT_CONFIG,
@@ -39,6 +41,7 @@ import {
   Shipstatic,
   SPA_CONFIG,
   VIA,
+  type WireError,
 } from '../nodes/Shipstatic/Shipstatic.node';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -79,6 +82,31 @@ function operationOptions(resource: string): INodePropertyOptions[] {
 describe('restated platform facts', () => {
   it('the API base URL is the one @shipstatic/types owns', () => {
     expect(API).toBe(DEFAULT_API);
+  });
+
+  it('every console link is the URL types owns', () => {
+    // `MY_API_KEY_URL` was written out in five files across three repos until
+    // types 2.5.0-beta.21. This node cannot import it (the sandbox), so its
+    // three prose copies — the rate-limit hint, the credential-gate message,
+    // the credential description, plus the README — are held to the owner
+    // here. Prose links rot silently, which is exactly what earns the fence.
+    const node = readFileSync(join(ROOT, 'nodes/Shipstatic/Shipstatic.node.ts'), 'utf8');
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+    const credential = new ShipstaticApi();
+
+    expect(node).toContain(MY_API_KEY_URL);
+    expect(readme).toContain(MY_API_KEY_URL);
+    expect(String(credential.properties[0].description)).toContain(MY_API_KEY_URL);
+  });
+
+  it('the failure item can carry every wire error', () => {
+    // `WireError` restates `ErrorResponse`'s shape — the sandbox forbids the
+    // import in shipped code, so the suite proves assignability instead: a
+    // reshaped wire error would fail to compile here, not quietly hand
+    // workflows a wrong structure. (`tsconfig.check.json` covers tests, which
+    // is what makes this line a fence rather than decoration.)
+    const wire: WireError = {} as ErrorResponse;
+    expect(wire).toBeDefined();
   });
 
   it('`via` is a member of the platform vocabulary', () => {

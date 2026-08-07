@@ -122,7 +122,7 @@ const LABELS_OPTION: INodeProperties = {
  * Absent is honest: inventing an `errorType` for a DNS failure would claim the
  * platform answered when nothing did.
  */
-type WireError = { error: string; message?: string; status?: number; details?: unknown };
+export type WireError = { error: string; message?: string; status?: number; details?: unknown };
 
 function readWireError(error: unknown): WireError | undefined {
   const err = error as Record<string, unknown> | undefined;

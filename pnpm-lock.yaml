@@ -22,8 +22,8 @@ importers:
         specifier: 0.23.1
         version: 0.23.1(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.58.2)(deepmerge@4.3.1)(dotenv@17.4.1)(openai@6.33.0(ws@8.20.0)(zod@3.25.67))(zod@3.25.67))(@ibm-cloud/watsonx-ai@1.7.9)(@typescript-eslint/utils@8.58.1(eslint@9.39.4(jiti@2.6.1))(typescript@6.0.2))(eslint@9.39.4(jiti@2.6.1))(ibm-cloud-sdk-core@5.4.8)(ignore@5.3.2)(jsonwebtoken@9.0.3)(lodash@4.18.1)(n8n-workflow@2.12.0)(openai@6.33.0(ws@8.20.0)(zod@3.25.67))(playwright@1.58.2)(typescript@6.0.2)(ws@8.20.0)
       '@shipstatic/types':
-        specifier: 2.5.0-beta.20
-        version: 2.5.0-beta.20
+        specifier: 2.5.0-beta.22
+        version: 2.5.0-beta.22
       '@vitest/coverage-v8':
         specifier: 4.1.10
         version: 4.1.10(vitest@4.1.10)
@@ -852,8 +852,8 @@ packages:
   '@rolldown/pluginutils@1.0.0-rc.13':
     resolution: {integrity: sha512-3ngTAv6F/Py35BsYbeeLeecvhMKdsKm4AoOETVhAA+Qc8nrA2I0kF7oa93mE9qnIurngOSpMnQ0x2nQY2FPviA==}
 
-  '@shipstatic/types@2.5.0-beta.20':
-    resolution: {integrity: sha512-F1tDu3Ha5m029QYmGmNyf7XIs+fiAJ0m+mRxKwjKrOdWJSrK0TfnFJIkRgKXCPZetrYZCNwBb/OObvWp5JwmGw==}
+  '@shipstatic/types@2.5.0-beta.22':
+    resolution: {integrity: sha512-Aoc4hRnu7HffD26GF1ekiNDTssRtOeoMkqtrvHMxfAmmb6uy7iPsKFUbuwseKjJqbLsW1pcI4a9uvRbaC2VUdA==}
     engines: {node: '>=20.0.0'}
 
   '@standard-schema/spec@1.1.0':
@@ -3766,7 +3766,7 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.0-rc.13': {}
 
-  '@shipstatic/types@2.5.0-beta.20': {}
+  '@shipstatic/types@2.5.0-beta.22': {}
 
   '@standard-schema/spec@1.1.0': {}
 
