@@ -36,11 +36,35 @@ Add a **ShipStatic** node to your workflow. No credentials to configure.
 2. Paste or wire your HTML into **File Content**
 3. Run — deployed as `index.html` by default (customizable via **File Name**)
 
-That's it. Your site is live instantly. No API key, no sign-up, no configuration.
+That's it. Your site is live instantly. No token, no sign-up, no configuration.
 
-Deployments without an API key are public and expire in 3 days. The output includes a **claim URL** — visit it to keep the site permanently.
+Deployments made without credentials are public and expire in 3 days. The output includes a **claim URL** — visit it to keep the site permanently.
 
 Want a private site? Add a **Password** under the Deploy operation's Options (6–128 characters; whitespace significant). Visitors will be prompted to unlock before viewing, including on any custom domains pointing at the deployment.
+
+### Single-page apps just work
+
+Deploying a React, Vue or Svelte build? The node detects it and adds the routing
+config the site needs, so `/about` resolves to your app instead of returning
+404. It is on by default and does nothing to sites that are not single-page
+apps.
+
+Two ways to take control: turn **Single-Page App Routing** off under Options, or
+include your own `ship.json` among the deployed files — the node never
+overwrites one you shipped yourself.
+
+### Retries that do not deploy twice
+
+n8n's **Retry On Fail** makes a workflow the most likely thing to retry a deploy
+automatically. Set an **Idempotency Key** under Options and a retry replays the
+original deployment instead of creating a second one:
+
+```
+{{ $execution.id }}
+```
+
+Key the *attempt*, never the try — a value stable across retries of one logical
+deploy and different for the next. Leave it empty and every run deploys afresh.
 
 ## All Operations — Free API Key
 
@@ -48,31 +72,56 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 1. Get a free key at [my.shipstatic.com/api-key](https://my.shipstatic.com/api-key)
 2. In n8n, go to **Credentials > New Credential > ShipStatic API**
-3. Paste your API key and save — n8n verifies the connection automatically
+3. Paste it into **Token** and save — n8n verifies the connection automatically
+
+### One credential slot
+
+The **Token** field takes either kind of ShipStatic credential, and the server
+tells them apart by their shape — there is nothing to select:
+
+| Value | What it can do |
+| ----- | -------------- |
+| `ship-…` **API key** | Every operation in this node |
+| `deploy-…` **deploy token** | Deploy only — it is deploy-scoped by design |
+
+A deploy token will **fail the credential connection test**, which checks
+account access. That is expected rather than a broken credential: use one for
+deploy-only workflows, and an API key for everything else.
+
+### Listing
+
+Both **List** operations honour n8n's usual controls. **Return All** follows the
+API's pagination to the end rather than stopping at the first page, and
+**Limit** stops once it has collected that many. The Deployment and Domain
+dropdowns page the same way as you scroll them.
 
 ### Deployments
 
 | Operation  | Description                                                                                            |
 | ---------- | ------------------------------------------------------------------------------------------------------ |
+| **Delete** | Delete a deployment and all its files — the response reports the deletion state |
 | **Deploy** | Publish files and get a live URL instantly                                                             |
 | **Get**    | Get deployment details including URL, status, file count, size, labels, and password protection state |
 | **List**   | List all deployments with their URLs, status, labels, and password protection state                   |
-| **Remove** | Permanently remove a deployment and all its files                                                      |
 | **Set**    | Update labels on a deployment (replaces all existing labels)                                           |
+
+Deleting is asynchronous: the API acknowledges with the deployment and a
+`deleting` status, and the site stays served until background cleanup
+completes.
 
 ### Domains
 
 | Operation    | Description                                                                     |
 | ------------ | ------------------------------------------------------------------------------- |
+| **Delete**   | Permanently disconnect and delete a custom domain                               |
 | **DNS**      | Look up which DNS provider hosts a domain (e.g. Cloudflare, Namecheap)          |
 | **Get**      | Get domain details including linked deployment, verification status, and labels |
 | **List**     | List all domains with their linked deployment and verification status           |
 | **Records**  | Get the DNS records you need to configure at your DNS provider                  |
-| **Remove**   | Permanently disconnect and remove a custom domain                               |
 | **Set**      | Create or update a custom domain — reserve, link, switch deployments, or update labels |
 | **Share**    | Get a shareable setup hash so someone else can view the required DNS records    |
 | **Validate** | Check if a domain name is valid and available before connecting it              |
-| **Verify**   | Check if DNS is configured correctly after you set up the records               |
+| **Verify**   | Queue a DNS check after you configure the records — the domain's status updates once it runs |
 
 ### Account
 

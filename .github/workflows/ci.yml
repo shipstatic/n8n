@@ -1,0 +1,65 @@
+# Tests-only by doctrine: releases here are TAG-driven (`npm-publish.yml`), so
+# there is no environment dimension to flip and this file is identical on both
+# branches. Pushing `development` publishes nothing.
+#
+# It exists because until 1.0.0 the publish workflow was the only automated
+# gate on this repo — a broken commit on `development` was discovered at
+# release time, which is the worst moment to discover one. The same gap the
+# vscode repo closed, for the same reason. The pre-commit hook is a fast gate
+# (credential scan, lint, typecheck); suites live in CI, never in hooks.
+name: CI
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # No `version:` — pnpm/action-setup reads the `packageManager` field,
+      # so the pnpm pin lives in exactly one place.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec biome ci .
+
+      # NOT a second linter — the n8n Cloud VERIFICATION ruleset, delivered as
+      # an eslint plugin. It is what refuses `process` and non-relative imports
+      # in shipped code, which are sandbox and packaging contracts rather than
+      # style. See `eslint.config.mjs`.
+      - run: pnpm lint:n8n
+
+      - run: pnpm typecheck
+
+      # BEFORE the suite, not after: the artifact fence in
+      # `tests/contract.test.ts` reads `dist/` and asserts the built bytes
+      # require nothing outside `n8n-workflow` and node builtins. An unbuilt
+      # tree must fail the suite rather than skip the one fence that proves the
+      # zero-dependency claim over what actually ships.
+      - run: pnpm build
+
+      - run: pnpm coverage
+
+      # Activates once the SLACK_WEBHOOK_URL secret is set on this repo.
+      - if: failure() && env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v4
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "🔴 n8n CI failed on ${{ github.ref_name }}"

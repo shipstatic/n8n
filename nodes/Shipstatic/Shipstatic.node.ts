@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   IDataObject,
   IExecuteFunctions,
@@ -10,9 +11,23 @@ import type {
   JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-import { createHash } from 'node:crypto';
+import { API } from './api';
 
-const API = 'https://api.shipstatic.com';
+/**
+ * Origin tracking — which client made this deploy.
+ *
+ * A LITERAL, and it has to be. `DeploymentVia` in `@shipstatic/types` owns the
+ * closed set, but `@n8n/community-nodes/no-restricted-imports` refuses ANY
+ * non-relative import here — it matches on the import statement, so even
+ * `import type`, which provably erases, is rejected. n8n Cloud's
+ * zero-dependency contract is not negotiable and it does not read TypeScript.
+ *
+ * So the restatement is forced, and where a restatement is forced a fence
+ * compares the copies: `tests/contract.test.ts` imports the real `DeploymentVia`
+ * and asserts this value is a member. A typo fails the suite instead of
+ * becoming a deploy the server silently drops from its analytics.
+ */
+export const VIA = 'n8n';
 
 // =============================================================================
 // Pure helpers
@@ -32,6 +47,15 @@ export function parseLabels(value: string): string[] | undefined {
 
 function toJson(data: unknown): INodeExecutionData['json'] {
   return data as INodeExecutionData['json'];
+}
+
+// True when a transport error carries HTTP 429. The legacy `request` helper
+// reports the status as `httpCode` (string) or `statusCode` (number) depending
+// on the failure path, so both are read.
+function isRateLimited(error: unknown): boolean {
+  const code =
+    (error as { httpCode?: string }).httpCode ?? (error as { statusCode?: number }).statusCode;
+  return code === '429' || code === 429;
 }
 
 // Unwrap a resource-locator value when it appears inside a collection.
@@ -76,16 +100,74 @@ const LABELS_OPTION: INodeProperties = {
 };
 
 // =============================================================================
-// HTTP layer — three helpers, each with one job
+// HTTP layer — two helpers, each with one job
 //
 //   apiRequest         JSON + n8n credential-aware auth (every CRUD op)
-//   fetchAgentToken    POST /tokens/agent — bootstrap for unauthenticated deploys
-//   uploadDeployment   POST /deployments multipart with a manual Bearer header
+//   uploadDeployment   POST /deployments multipart, auth attached by hand
 //
-// All three wrap transport errors in NodeApiError at the I/O boundary so the
-// rest of the node can stay trivial — the dominant idiom in n8n core nodes
+// Both wrap transport errors in NodeApiError at the I/O boundary so the rest
+// of the node can stay trivial — the dominant idiom in n8n core nodes
 // (GitHub, Notion, Slack).
 // =============================================================================
+
+/**
+ * The API's failure body, carried through `NodeApiError` so the node's own
+ * catch sites can put structure beside the message.
+ *
+ * The platform's law is "clients branch on error type and status, never on
+ * message strings", and a workflow engine is the caller MOST able to obey it —
+ * `continueOnFail` output feeds an IF node. n8n's helpers surface a non-2xx
+ * body in different places depending on which of them threw, so every shape
+ * they are known to produce is read and anything else is treated as absent.
+ * Absent is honest: inventing an `errorType` for a DNS failure would claim the
+ * platform answered when nothing did.
+ */
+type WireError = { error: string; message?: string; status?: number; details?: unknown };
+
+function readWireError(error: unknown): WireError | undefined {
+  const err = error as Record<string, unknown> | undefined;
+  const bodies = [
+    err?.error, // legacy `request` helper with `json: true`
+    (err?.response as Record<string, unknown> | undefined)?.body, // httpRequest*
+    (err?.cause as Record<string, unknown> | undefined)?.error,
+  ];
+  for (const body of bodies) {
+    if (body && typeof body === 'object' && typeof (body as WireError).error === 'string') {
+      return body as WireError;
+    }
+  }
+  return undefined;
+}
+
+// Stashed on the NodeApiError we construct: n8n's own class carries `httpCode`
+// but nothing shaped like `ErrorResponse`, and re-deriving it at the catch site
+// would mean parsing the same body twice from two different wrappers.
+const WIRE = Symbol.for('shipstatic.wire');
+
+function apiError(ctx: IExecuteFunctions, error: unknown, options?: object): NodeApiError {
+  const wrapped = new NodeApiError(ctx.getNode(), error as JsonObject, options);
+  const wire = readWireError(error);
+  if (wire) (wrapped as unknown as Record<symbol, unknown>)[WIRE] = wire;
+  return wrapped;
+}
+
+/**
+ * The failure item a `continueOnFail` run emits: the message as `error`
+ * because that is what n8n's UI renders, and the wire's own fields BESIDE it.
+ * The same shape the MCP settled on — text authoritative, structure alongside —
+ * and the failure-path mirror of returning delete acknowledgements verbatim.
+ */
+function errorItem(error: unknown): IDataObject {
+  const message = error instanceof Error ? error.message : 'An unexpected error occurred';
+  const wire = (error as Record<symbol, WireError> | undefined)?.[WIRE];
+  if (!wire) return { error: message };
+  return {
+    error: message,
+    errorType: wire.error,
+    ...(wire.status !== undefined ? { status: wire.status } : {}),
+    ...(wire.details !== undefined ? { details: wire.details as IDataObject } : {}),
+  };
+}
 
 async function apiRequest(
   ctx: IExecuteFunctions,
@@ -101,62 +183,175 @@ async function apiRequest(
       json: true,
     });
   } catch (error) {
-    throw new NodeApiError(ctx.getNode(), error as JsonObject);
+    throw apiError(ctx, error);
   }
 }
 
-// Anonymous deploys go to the platform's public account via a short-lived,
-// IP-locked token. The API mints a fresh one per call; we never store it.
-// This endpoint is intentionally unauthenticated — it's the bootstrap for
-// users who haven't (and may never) configured credentials.
-async function fetchAgentToken(ctx: IExecuteFunctions): Promise<string> {
-  try {
-    const response = await ctx.helpers.request({
-      method: 'POST',
-      uri: `${API}/tokens/agent`,
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-      json: true,
-    });
-    return response.secret as string;
-  } catch (error) {
-    // /tokens/agent is rate-limited (5/hr per IP). When that's the cause,
-    // the actionable fix is "use an API key" — surface that explicitly so
-    // users don't retry blindly. Mirrors the SDK's UX.
-    const httpCode =
-      (error as { httpCode?: string; statusCode?: number }).httpCode ??
-      (error as { statusCode?: number }).statusCode;
-    if (httpCode === '429' || httpCode === 429) {
-      throw new NodeApiError(ctx.getNode(), error as JsonObject, {
-        message: 'Public deploy rate limit exceeded',
-        description:
-          'Add a ShipStatic API key (free at https://my.shipstatic.com/api-key) for higher limits, or wait and retry later.',
-      });
-    }
-    throw new NodeApiError(ctx.getNode(), error as JsonObject);
-  }
+/**
+ * Walk a paginated collection.
+ *
+ * The 2.x API paginates every list: omitting `limit` returns the server's
+ * default first page, and `cursor: null` is the entire has-more signal. The
+ * 1.x API did not, which is why this node used to fetch once and slice — and
+ * why `Return All: true` silently stopped at the server's default. `returnAll`
+ * is a contract word in n8n's ecosystem: every core node's `returnAll` walks
+ * pages, so returning one page under that name is a lie the ecosystem reads.
+ *
+ * **No page size appears here.** The server owns its default and its cap; a
+ * number restated in this file would be a second owner of one fact. So a
+ * bounded request asks for what it still needs and keeps going if the server
+ * gave less — the clamp is handled by continuing, never by knowing.
+ */
+async function fetchList(
+  ctx: IExecuteFunctions,
+  path: string,
+  collection: string,
+  limit?: number,
+): Promise<IDataObject[]> {
+  const items: IDataObject[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const query = new URLSearchParams();
+    if (limit !== undefined) query.set('limit', String(limit - items.length));
+    if (cursor) query.set('cursor', cursor);
+    const qs = query.toString();
+
+    const response = await apiRequest(ctx, 'GET', qs ? `${path}?${qs}` : path);
+    const page = (response[collection] ?? []) as IDataObject[];
+    items.push(...page);
+
+    // An empty page with a live cursor is out of contract, and looping on it
+    // would hang the execution rather than fail it.
+    if (page.length === 0) break;
+    cursor = (response.cursor as string | null) ?? undefined;
+  } while (cursor && (limit === undefined || items.length < limit));
+
+  return limit === undefined ? items : items.slice(0, limit);
 }
 
 // n8n's modern httpRequest helper does not reliably handle multipart FormData
 // (proven across v0.5–0.6 of this node); the legacy `request` helper is the
 // only path that produces a working multipart upload — the same fallback
 // Slack, S3, and Google Drive use for file uploads. Auth is manual because
-// the same upload may be Bearer'd with either an API key or an agent token.
+// deploy is the ONE operation with optional credentials, and n8n's
+// credential-aware helper cannot express "send this header only if a
+// credential exists".
+//
+// Anonymity is in-band: a request with no Authorization header is granted the
+// public-account agent identity, and the response carries a claim URL and an
+// expiry. A token that IS present and rejected fails with a typed error — it
+// never silently downgrades to an anonymous deploy.
 async function uploadDeployment(
   ctx: IExecuteFunctions,
-  authorization: string,
   formData: IDataObject,
+  token: string | undefined,
+  idempotencyKey?: string,
 ): Promise<IDataObject> {
   try {
     return await ctx.helpers.request({
       method: 'POST',
       uri: `${API}/deployments`,
-      headers: { Authorization: authorization },
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        // Restated from `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`; fenced in
+        // `tests/contract.test.ts` like every other forced restatement.
+        ...(idempotencyKey ? { [IDEMPOTENCY_HEADER]: idempotencyKey } : {}),
+      },
       formData,
       json: true,
     });
   } catch (error) {
-    throw new NodeApiError(ctx.getNode(), error as JsonObject);
+    // A keyless deploy is metered per IP on the platform's anonymous bucket.
+    // When that is the cause, the actionable fix is "add credentials" — say
+    // so rather than leaving the caller to retry blindly. An authenticated
+    // 429 is a different limit with different advice, so the hint is
+    // conditional on the credential being absent.
+    if (!token && isRateLimited(error)) {
+      throw apiError(ctx, error, {
+        message: 'Public deploy rate limit exceeded',
+        description:
+          'Add a ShipStatic API key (free at https://my.shipstatic.com/api-key) for higher limits, or wait and retry later.',
+      });
+    }
+    throw apiError(ctx, error);
+  }
+}
+
+/**
+ * SPA detection — parity with every SDK-riding surface.
+ *
+ * The SDK's deploy path runs this for the CLI, both MCP transports and the
+ * VS Code extension: `POST /spa-check` (public, no credential needed), and on
+ * `isSPA` it appends a generated `ship.json` so client-side routes resolve.
+ * This node is direct HTTP, so without a mirror a React build deployed from a
+ * workflow serves 404s on every route but `/` — on the ONE surface whose users
+ * are least equipped to diagnose that, and least likely to know what
+ * `ship.json` is.
+ *
+ * Mirrors the SDK's posture exactly: skip when the user already ships a config,
+ * skip when `index.html` is absent or too large to be worth reading, and
+ * **continue silently on any failure** — detection is an enhancement, never a
+ * gate on the deploy.
+ */
+// Restated from `DEPLOYMENT_CONFIG_FILENAME`; fenced against it. It gates both
+// the skip-when-the-user-shipped-one check and the appended filename, so drift
+// would silently break the SPA mirror's own escape hatch.
+export const SHIP_JSON = 'ship.json';
+
+/** Restated from `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`; fenced against it. */
+export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
+
+// Restated from `SPA_DEFAULT_CONFIG` in `@shipstatic/types` — the zero-import
+// rule forbids reading it, so `tests/contract.test.ts` compares the copies.
+export const SPA_CONFIG = { rewrites: [{ source: '/(.*)', destination: '/index.html' }] };
+
+/**
+ * **The server classifies; this node does not.** The SDK guards its own call
+ * with a 100KB index ceiling, and copying that number here would have put a
+ * third copy of an unowned fact in the estate — the API has
+ * `DEPLOYMENT.SPA_MAX_INDEX_SIZE`, the SDK an inline literal, and
+ * `@shipstatic/types` owns neither, so there is nothing to fence a copy
+ * against.
+ *
+ * Not holding the number is stronger than fencing it: a client that never
+ * makes the classification decision cannot disagree with the server about it.
+ * An oversized index is answered `isSPA: false` gracefully — the outcome is
+ * identical, and outcome parity with the SDK is what a user experiences.
+ * The cost is one redundant upload of an index the deploy sends anyway, in
+ * the uncommon case of a >100KB index.html, bounded by the API's own 5MB
+ * body limit.
+ */
+async function detectSpa(
+  ctx: IExecuteFunctions,
+  files: { path: string; content: Buffer }[],
+  token: string | undefined,
+) {
+  const index = files.find((f) => f.path === 'index.html');
+  if (!index) return false;
+  try {
+    const response = (await ctx.helpers.request({
+      method: 'POST',
+      uri: `${API}/spa-check`,
+      headers: {
+        'Content-Type': 'application/json',
+        // The credential rides the pre-flight, exactly as the SDK's client
+        // does — it attaches auth to every request, this one included. Not
+        // cosmetic: `/spa-check` charges an ANONYMOUS caller the public write
+        // bucket to bound its AI tier's spend, and exempts a credentialed one
+        // "so the pre-flight never double-charges the deploy it precedes".
+        // Probing anonymously with a token in hand forfeits that exemption and
+        // spends a budget the user already paid to avoid — which surfaces as
+        // SPA routing silently ceasing to work under sustained use, while the
+        // deploys themselves keep succeeding.
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: { files: files.map((f) => f.path), index: index.content.toString('utf-8') },
+      json: true,
+    })) as IDataObject;
+    return response.isSPA === true;
+  } catch {
+    return false;
   }
 }
 
@@ -178,6 +373,37 @@ async function hasCredentials(ctx: ILoadOptionsFunctions): Promise<boolean> {
   }
 }
 
+/**
+ * One page of a resource-locator dropdown. Both backends differ only in which
+ * collection they read and which key names an item, so they share this rather
+ * than stating the same walk twice.
+ */
+async function searchPage(
+  ctx: ILoadOptionsFunctions,
+  path: string,
+  collection: string,
+  key: string,
+  filter?: string,
+  cursor?: string,
+): Promise<INodeListSearchResult> {
+  if (!(await hasCredentials(ctx))) return { results: [] };
+  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+  const response = await ctx.helpers.httpRequestWithAuthentication.call(ctx, 'shipstaticApi', {
+    method: 'GET',
+    url: `${API}${path}${query}`,
+    json: true,
+  });
+  const page = (response[collection] ?? []) as IDataObject[];
+  const needle = filter?.toLowerCase();
+  const matches = needle
+    ? page.filter((item) => String(item[key]).toLowerCase().includes(needle))
+    : page;
+  return {
+    results: matches.map((item) => ({ name: String(item[key]), value: String(item[key]) })),
+    ...(response.cursor ? { paginationToken: response.cursor } : {}),
+  };
+}
+
 // =============================================================================
 // Deploy — the only operation with optional credentials and multipart upload
 // =============================================================================
@@ -185,7 +411,7 @@ async function hasCredentials(ctx: ILoadOptionsFunctions): Promise<boolean> {
 async function handleDeploy(
   ctx: IExecuteFunctions,
   items: INodeExecutionData[],
-  apiKey: string | undefined,
+  token: string | undefined,
 ): Promise<INodeExecutionData[]> {
   const isBinaryData = ctx.getNodeParameter('binaryData', 0) as boolean;
   const options = ctx.getNodeParameter('options', 0) as IDataObject;
@@ -223,27 +449,40 @@ async function handleDeploy(
 
   // 2. Optimize paths — strip common directory prefix
   const stripped = stripCommonPrefix(files.map((f) => f.path));
-  files.forEach((f, idx) => (f.path = stripped[idx]));
+  for (const [idx, file] of files.entries()) {
+    file.path = stripped[idx];
+  }
 
-  // 3. Build formData
+  // 3. SPA parity — append a routing config when the build needs one and the
+  //    user did not ship their own. Runs on the stripped paths because that is
+  //    what the deployment will serve.
+  const spaDetect = options.spaDetect !== false;
+  if (
+    spaDetect &&
+    !files.some((f) => f.path === SHIP_JSON) &&
+    (await detectSpa(ctx, files, token))
+  ) {
+    const content = Buffer.from(`${JSON.stringify(SPA_CONFIG, null, 2)}\n`, 'utf-8');
+    files.push({ path: SHIP_JSON, content, md5: md5(content) });
+  }
+
+  // 4. Build formData — after the SPA step, so its checksum rides along
   const formData: IDataObject = {
     'files[]': files.map((f) => ({
       value: f.content,
       options: { filename: f.path, contentType: 'application/octet-stream' },
     })),
     checksums: JSON.stringify(files.map((f) => f.md5)),
-    via: 'n8n',
+    via: VIA,
   };
   const labels = parseLabels(options.labels as string);
   if (labels) formData.labels = JSON.stringify(labels);
-  const password = (options.password as string)?.trim();
+  const password = (options.password as string | undefined)?.trim();
   if (password) formData.password = password;
 
-  // 4. Authenticate — explicit API key, or a short-lived agent token for public deploys
-  const token = apiKey ?? (await fetchAgentToken(ctx));
-
-  // 5. Upload
-  const result = await uploadDeployment(ctx, `Bearer ${token}`, formData);
+  // 5. Upload — with the token when one is configured, anonymously when not
+  const idempotencyKey = (options.idempotencyKey as string | undefined)?.trim();
+  const result = await uploadDeployment(ctx, formData, token, idempotencyKey);
 
   return [
     {
@@ -268,8 +507,9 @@ export class Shipstatic implements INodeType {
     inputs: [NodeConnectionTypes.Main],
     outputs: [NodeConnectionTypes.Main],
     usableAsTool: true,
-    // Deploy works without credentials (public deploy, 3-day expiry).
-    // All other operations require a free API key.
+    // Deploy works without credentials — the API grants a public identity per
+    // request and answers with a claim URL and an expiry. Every other
+    // operation requires a free API key.
     credentials: [
       {
         name: 'shipstaticApi',
@@ -303,10 +543,17 @@ export class Shipstatic implements INodeType {
         displayOptions: { show: { resource: ['deployment'] } },
         options: [
           {
+            name: 'Delete',
+            value: 'delete',
+            description:
+              'Delete a deployment and all its files. The response reports the transitional state — the site stays served until cleanup completes. Confirm with the user before calling this — it cannot be undone.',
+            action: 'Delete a deployment',
+          },
+          {
             name: 'Deploy',
             value: 'deploy',
             description:
-              'Publish files and get a live URL. Without an API key, the response includes a claim URL — show both to the user. To make the site private, set Password under Options.',
+              'Publish files and get a live URL. Without credentials, the response includes a claim URL — show both to the user. To make the site private, set Password under Options.',
             action: 'Deploy a site',
           },
           {
@@ -322,13 +569,6 @@ export class Shipstatic implements INodeType {
             description:
               'List all deployments with their URLs, status, labels, and password protection state',
             action: 'List all deployments',
-          },
-          {
-            name: 'Remove',
-            value: 'remove',
-            description:
-              'Permanently remove a deployment and all its files. Confirm with the user before calling this — it cannot be undone.',
-            action: 'Remove a deployment',
           },
           {
             name: 'Set',
@@ -347,6 +587,13 @@ export class Shipstatic implements INodeType {
         noDataExpression: true,
         displayOptions: { show: { resource: ['domain'] } },
         options: [
+          {
+            name: 'Delete',
+            value: 'delete',
+            description:
+              'Permanently disconnect and delete a custom domain. Confirm with the user before calling this — it cannot be undone.',
+            action: 'Delete a domain',
+          },
           {
             name: 'DNS',
             value: 'dns',
@@ -373,13 +620,6 @@ export class Shipstatic implements INodeType {
             description:
               'Get the DNS records you need to configure at your DNS provider. Call after Set; show the records to the user, then call Verify once DNS is configured.',
             action: 'Get DNS records',
-          },
-          {
-            name: 'Remove',
-            value: 'remove',
-            description:
-              'Permanently disconnect and remove a custom domain. Confirm with the user before calling this — it cannot be undone.',
-            action: 'Remove a domain',
           },
           {
             name: 'Set',
@@ -477,7 +717,7 @@ export class Shipstatic implements INodeType {
         description: 'The path to deploy the content as (defaults to "index.html")',
       },
 
-      // Deployment — used by get, set, remove. Resource locator gives the user
+      // Deployment — used by get, set, delete. Resource locator gives the user
       // search-as-you-type from the list and free-text fallback by hostname.
       {
         displayName: 'Deployment',
@@ -486,7 +726,7 @@ export class Shipstatic implements INodeType {
         default: { mode: 'list', value: '' },
         required: true,
         displayOptions: {
-          show: { resource: ['deployment'], operation: ['get', 'set', 'remove'] },
+          show: { resource: ['deployment'], operation: ['get', 'set', 'delete'] },
         },
         description: 'The deployment to operate on',
         modes: [
@@ -522,7 +762,7 @@ export class Shipstatic implements INodeType {
 
       // Domain — used by every domain operation. Resource locator handles
       // both flows uniformly: "From List" for ops on existing domains
-      // (get, records, verify, remove, dns, share) and for re-pointing
+      // (get, records, verify, delete, dns, share) and for re-pointing
       // (set); "By Name" for ops that may target a not-yet-created domain
       // (set when reserving, validate).
       {
@@ -563,6 +803,11 @@ export class Shipstatic implements INodeType {
         type: 'boolean',
         default: false,
         displayOptions: { show: { operation: ['list'] } },
+        // n8n's own ruleset enforces this sentence verbatim
+        // (`node-param-description-wrong-for-return-all`), and that is the
+        // whole point: `returnAll` is a contract word every core node honours
+        // by walking pages. Until T9 this node returned one page under it. The
+        // phrase never needed fixing — the behaviour did.
         description: 'Whether to return all results or only up to a given limit',
       },
       {
@@ -589,6 +834,16 @@ export class Shipstatic implements INodeType {
         default: {},
         displayOptions: { show: { resource: ['deployment'], operation: ['deploy'] } },
         options: [
+          {
+            displayName: 'Idempotency Key',
+            name: 'idempotencyKey',
+            type: 'string',
+            default: '',
+            // eslint-disable-next-line n8n-nodes-base/node-param-placeholder-miscased-id -- `$execution.id` is n8n expression syntax, not prose; `$execution.ID` is not a variable.
+            placeholder: '={{ $execution.id }}',
+            description:
+              'Key the ATTEMPT, never the try. A retry carrying the same key replays the original deployment instead of creating a second one — which matters most here, because Retry On Fail is a core n8n feature and makes this the platform surface most likely to retry automatically. Use a value that is stable across retries of one logical deploy (an execution ID, a commit SHA) and different for the next one. Omit it and every run deploys afresh.',
+          },
           LABELS_OPTION,
           {
             displayName: 'Password',
@@ -598,6 +853,14 @@ export class Shipstatic implements INodeType {
             default: '',
             description:
               'Password-protect the deployment (6–128 characters; whitespace significant). Visitors must enter this password before viewing the site, including on any custom domains pointing at it.',
+          },
+          {
+            displayName: 'Single-Page App Routing',
+            name: 'spaDetect',
+            type: 'boolean',
+            default: true,
+            description:
+              'Whether to detect a single-page app (React, Vue, Svelte…) and add the routing config it needs, so deep links resolve instead of 404ing. Matches what the CLI and the AI-agent integrations already do. Turn it off, or include your own routing config among the deployed files, to take control.',
           },
         ],
       },
@@ -643,46 +906,40 @@ export class Shipstatic implements INodeType {
 
   methods = {
     listSearch: {
-      // Resource locator search backends. Probe credentials first — silent
+      // Resource locator search backends. Probe credentials first — a silent
       // empty dropdown is the right UX while the user is still wiring the
       // node up. Once credentials exist, any failure (invalid key, API down)
-      // is real and must surface in the UI. Filtering is client-side: the
-      // API returns the full list and we narrow on the user's typed query.
+      // is real and must surface in the UI.
+      //
+      // **The cursor IS n8n's pagination token.** `INodeListSearchResult`
+      // carries `paginationToken` and the listSearch signature receives it
+      // back on the next call, which is exactly the API's `{limit, cursor}`
+      // contract under another name — so the dropdown scrolls through every
+      // deployment instead of stopping at the server's first page.
+      //
+      // Filtering stays client-side and therefore PER PAGE: the API has no
+      // filter query, so narrowing what a page returned is the whole of what
+      // a client can do. n8n asks for the next page as the user scrolls.
       async searchDeployments(
         this: ILoadOptionsFunctions,
         filter?: string,
+        paginationToken?: string,
       ): Promise<INodeListSearchResult> {
-        if (!(await hasCredentials(this))) return { results: [] };
-        const response = await this.helpers.httpRequestWithAuthentication.call(
+        return searchPage(
           this,
-          'shipstaticApi',
-          { method: 'GET', url: `${API}/deployments`, json: true },
+          '/deployments',
+          'deployments',
+          'deployment',
+          filter,
+          paginationToken,
         );
-        const all = (response.deployments ?? []) as { deployment: string }[];
-        const matches = filter
-          ? all.filter((d) => d.deployment.toLowerCase().includes(filter.toLowerCase()))
-          : all;
-        return {
-          results: matches.map((d) => ({ name: d.deployment, value: d.deployment })),
-        };
       },
       async searchDomains(
         this: ILoadOptionsFunctions,
         filter?: string,
+        paginationToken?: string,
       ): Promise<INodeListSearchResult> {
-        if (!(await hasCredentials(this))) return { results: [] };
-        const response = await this.helpers.httpRequestWithAuthentication.call(
-          this,
-          'shipstaticApi',
-          { method: 'GET', url: `${API}/domains`, json: true },
-        );
-        const all = (response.domains ?? []) as { domain: string }[];
-        const matches = filter
-          ? all.filter((d) => d.domain.toLowerCase().includes(filter.toLowerCase()))
-          : all;
-        return {
-          results: matches.map((d) => ({ name: d.domain, value: d.domain })),
-        };
+        return searchPage(this, '/domains', 'domains', 'domain', filter, paginationToken);
       },
     },
   };
@@ -694,28 +951,30 @@ export class Shipstatic implements INodeType {
     const returnData: INodeExecutionData[] = [];
 
     // Deploy has two modes:
-    // • With an API key — permanent deployment under your account
-    // • Without an API key — public deployment, expires in 3 days (no sign-up needed)
+    // • With a token — permanent deployment under your account
+    // • Without one — public deployment with a claim URL and an expiry
     if (resource === 'deployment' && operation === 'deploy') {
-      let apiKey: string | undefined;
+      let token: string | undefined;
       try {
         const credentials = await this.getCredentials('shipstaticApi');
-        apiKey = credentials.apiKey as string;
+        // An empty field is absence of intent, not a credential to send:
+        // deploy anonymously rather than presenting a bare `Bearer `. Same
+        // normalization the SDK applies to an empty SHIP_TOKEN.
+        token = (credentials.token as string) || undefined;
       } catch {
-        // No credentials — deploy will use a temporary agent token instead
+        // No credentials configured — deploy anonymously.
       }
 
       try {
-        const results = await handleDeploy(this, items, apiKey);
+        const results = await handleDeploy(this, items, token);
         returnData.push(...results);
       } catch (error) {
         if (this.continueOnFail()) {
           // Deploy consumes every input item into one upload, so the error
           // must trace back to all of them — same pairedItem shape as the
           // success path inside handleDeploy.
-          const message = error instanceof Error ? error.message : 'An unexpected error occurred';
           returnData.push({
-            json: { error: message },
+            json: errorItem(error),
             pairedItem: items.map((_, idx) => ({ item: idx })),
           });
         } else {
@@ -731,17 +990,17 @@ export class Shipstatic implements INodeType {
     } catch {
       throw new NodeOperationError(
         this.getNode(),
-        'This operation requires a ShipStatic API key.',
+        'This operation requires ShipStatic credentials.',
         {
           description:
-            'Open Credentials → New → ShipStatic API and paste your key. Get a free key at https://my.shipstatic.com/api-key.',
+            'Open Credentials → New → ShipStatic API and paste an API key. Get a free key at https://my.shipstatic.com/api-key. A deploy token (deploy-…) is deploy-scoped — it can run Deploy, but not this operation.',
         },
       );
     }
 
     // Global ops (list, account.get) don't depend on per-item parameters —
     // run once and pair the output to all input items so n8n's data-trace stays
-    // honest. Per-item ops (get, set, remove, etc.) loop over input items as usual.
+    // honest. Per-item ops (get, set, delete, etc.) loop over input items as usual.
     const isGlobalOp = operation === 'list' || (resource === 'account' && operation === 'get');
     const iterations = isGlobalOp ? 1 : items.length;
     const globalPairedItem = items.map((_, idx) => ({ item: idx }));
@@ -752,13 +1011,11 @@ export class Shipstatic implements INodeType {
         if (resource === 'deployment') {
           if (operation === 'list') {
             const returnAll = this.getNodeParameter('returnAll', 0) as boolean;
-            const response = await apiRequest(this, 'GET', '/deployments');
-            let results = (response.deployments ?? []) as IDataObject[];
-            if (!returnAll) {
-              const limit = this.getNodeParameter('limit', 0) as number;
-              results = results.slice(0, limit);
-            }
-            for (const deployment of results) {
+            const limit = returnAll ? undefined : (this.getNodeParameter('limit', 0) as number);
+            // `cursor` is deliberately absent from the item json: returnAll and
+            // limit ARE n8n's pagination abstraction, and handing a workflow a
+            // cursor it has no way to feed back would be a second, broken one.
+            for (const deployment of await fetchList(this, '/deployments', 'deployments', limit)) {
               returnData.push({ json: toJson(deployment), pairedItem });
             }
           } else if (operation === 'get') {
@@ -779,12 +1036,21 @@ export class Shipstatic implements INodeType {
               { labels: labelValues },
             );
             returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'remove') {
+          } else if (operation === 'delete') {
             const id = this.getNodeParameter('deployment', i, '', {
               extractValue: true,
             }) as string;
-            await apiRequest(this, 'DELETE', `/deployments/${encodeURIComponent(id)}`);
-            returnData.push({ json: { success: true }, pairedItem });
+            // The acknowledgement is the output, verbatim. The API answers
+            // 202 with `{ deployment, status: 'deleting' }` — the row states
+            // the plan it is transitioning through, and a workflow branching
+            // on the deletion is the caller most able to act on that. A
+            // fabricated `{ success: true }` would throw it away.
+            const result = await apiRequest(
+              this,
+              'DELETE',
+              `/deployments/${encodeURIComponent(id)}`,
+            );
+            returnData.push({ json: toJson(result), pairedItem });
           }
         } else if (resource === 'domain') {
           // All domain ops read the same `domain` resource locator.
@@ -811,13 +1077,8 @@ export class Shipstatic implements INodeType {
             returnData.push({ json: toJson(result), pairedItem });
           } else if (operation === 'list') {
             const returnAll = this.getNodeParameter('returnAll', 0) as boolean;
-            const response = await apiRequest(this, 'GET', '/domains');
-            let results = (response.domains ?? []) as IDataObject[];
-            if (!returnAll) {
-              const limit = this.getNodeParameter('limit', 0) as number;
-              results = results.slice(0, limit);
-            }
-            for (const domain of results) {
+            const limit = returnAll ? undefined : (this.getNodeParameter('limit', 0) as number);
+            for (const domain of await fetchList(this, '/domains', 'domains', limit)) {
               returnData.push({ json: toJson(domain), pairedItem });
             }
           } else if (operation === 'get') {
@@ -856,9 +1117,12 @@ export class Shipstatic implements INodeType {
               `/domains/${encodeURIComponent(name)}/verify`,
             );
             returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'remove') {
-            await apiRequest(this, 'DELETE', `/domains/${encodeURIComponent(name)}`);
-            returnData.push({ json: { success: true }, pairedItem });
+          } else if (operation === 'delete') {
+            // Same law as the deployment delete: the wire's acknowledgement
+            // IS the output. `{ domain }` at 200 — the domain is gone when
+            // the call returns, which is why this one carries no state.
+            const result = await apiRequest(this, 'DELETE', `/domains/${encodeURIComponent(name)}`);
+            returnData.push({ json: toJson(result), pairedItem });
           }
         } else if (resource === 'account') {
           const result = await apiRequest(this, 'GET', '/account');
@@ -866,8 +1130,7 @@ export class Shipstatic implements INodeType {
         }
       } catch (error) {
         if (this.continueOnFail()) {
-          const message = error instanceof Error ? error.message : 'An unexpected error occurred';
-          returnData.push({ json: { error: message }, pairedItem });
+          returnData.push({ json: errorItem(error), pairedItem });
           continue;
         }
         // Attach the input item index so n8n's error UI can highlight which

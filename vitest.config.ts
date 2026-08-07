@@ -1,0 +1,66 @@
+import { defineConfig } from 'vitest/config';
+
+/**
+ * One project. The node has one runtime (n8n's Node process) and one
+ * collaborator (n8n's request helpers) — the tier split a larger suite needs
+ * would be several names for the same thing here.
+ *
+ * `tests/live.test.ts` is the exception, and it excludes ITSELF: it drives the
+ * same `execute()` against a real API and skips unless `SHIP_API_URL` and a
+ * token are present, so it never runs in CI and never needs a second config.
+ */
+export default defineConfig({
+  test: {
+    // Mock hygiene as config rather than per-file boilerplate: call history
+    // clears before every test, so an assertion can never pass on a previous
+    // test's calls.
+    clearMocks: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      // Only what ships. `tests/**` is instrumentation, and counting it would
+      // let the suite raise its own score.
+      include: ['nodes/**/*.ts', 'credentials/**/*.ts'],
+      /**
+       * The 2026-08-07 measurement, held. A ratchet — raised, never lowered.
+       *
+       * Statements, functions and lines sit at 100 and stay there: the whole
+       * shipped surface is three files driven through a mock of the n8n helper
+       * contract, so there is no in-process blind corner. An operation that
+       * arrives without a test fails the run.
+       *
+       * BRANCHES is 98.2 for exactly three arms, named rather than rounded
+       * away — the implicit `else` on each of the three `operation` chains in
+       * `execute()` (deployment, domain, account). They are unreachable through
+       * the real collaborator: n8n only ever passes a value from the `options`
+       * array it rendered, and `tests/contract.test.ts` pins that array. The
+       * fractional floor is deliberate — one more uncovered arm costs well
+       * under a point, so an integer floor would let it through.
+       *
+       * Raised from 97.7 on 2026-08-07 with the pagination / SPA / typed-error
+       * wave: a ratchet that is not raised when coverage rises is a floor the
+       * next gains erode back through.
+       *
+       * It moved 98.2 → 98.18 → 98.2 across this wave, and the dip was NOT decay — the uncovered set
+       * is byte-identical, still those three arms. Deleting the SPA index-size
+       * guard removed two COVERED arms, which shrinks the denominator and
+       * lowers the ratio while improving the code. Worth naming because it is
+       * the instrument's blind spot: a percentage answers "what fraction is
+       * covered", and the invariant actually being held here is "exactly three
+       * arms, and they are these three". When the two disagree, the enumerated
+       * arms are the claim; the number is only how it is enforced.
+       *
+       * NOTE: thresholds catch coverage DECAY. They cannot catch a test that
+       * asserts nothing; a tautology neither raises nor lowers coverage. The
+       * fences in `tests/contract.test.ts` are what hold the contracts a
+       * percentage cannot see.
+       */
+      thresholds: {
+        statements: 100,
+        branches: 98.2,
+        functions: 100,
+        lines: 100,
+      },
+    },
+  },
+});

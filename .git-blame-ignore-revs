@@ -1,0 +1,10 @@
+# Revisions to skip in `git blame` — bulk reformats, never behaviour.
+#
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# (GitHub reads this file automatically; the line above is for local blame.)
+
+# The Biome join (tabs + prettier → the platform block's two-space format),
+# committed as a format-only pass over the v0.7.0 tree so the 2.x rewrite's
+# blame points at authors rather than at the formatter.
+113461bd4da8b0abf61fefdac8a5ddd4e85e04e7
