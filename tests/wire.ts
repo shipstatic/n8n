@@ -56,7 +56,7 @@ export const DEPLOYMENT = {
  */
 export const ANONYMOUS_DEPLOYMENT = {
   ...DEPLOYMENT,
-  claim: `https://my.shipstatic.com/claims/claim-${'a'.repeat(32)}`,
+  claim: `https://my.shipstatic.com/claim/${'a'.repeat(32)}`,
   expires: 1785259200,
 } satisfies DeploymentCreateResponse;
 
