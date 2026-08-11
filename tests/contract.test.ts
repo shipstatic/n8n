@@ -22,7 +22,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ErrorResponse } from '@shipstatic/types';
 import {
+  API_KEY,
   DEFAULT_API,
+  DEPLOY_TOKEN,
   DEPLOYMENT_CONFIG_FILENAME,
   DeploymentVia,
   IDEMPOTENCY_KEY_CONSTRAINTS,
@@ -97,6 +99,31 @@ describe('restated platform facts', () => {
     expect(node).toContain(MY_API_KEY_URL);
     expect(readme).toContain(MY_API_KEY_URL);
     expect(String(credential.properties[0].description)).toContain(MY_API_KEY_URL);
+  });
+
+  it('every restated credential prefix is the one types owns', () => {
+    // The prefixes are the node's last unfenced restatement, and they are
+    // restated for the same reason everything else here is: n8n Cloud's
+    // zero-dependency rule refuses the import syntactically, so the strings
+    // are typed out in the credential placeholder, its description, and the
+    // node's own gate message. `integrations/vscode` builds the identical
+    // sentence FROM the constants — this fence is what buys this repo the
+    // same guarantee without the import.
+    //
+    // Silent by construction, which is what earns it: a stale prefix reads
+    // perfectly and simply tells a user to paste a credential the platform
+    // classifies as OPAQUE and refuses. `token-` was the deploy prefix until
+    // 2.0 and still appears in older docs, so this is drift with a precedent.
+    const node = readFileSync(join(ROOT, 'nodes/Shipstatic/Shipstatic.node.ts'), 'utf8');
+    const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+    const credential = new ShipstaticApi();
+    const slot = credential.properties[0];
+
+    expect(String(slot.placeholder)).toContain(API_KEY.PREFIX);
+    expect(String(slot.placeholder)).toContain(DEPLOY_TOKEN.PREFIX);
+    expect(String(slot.description)).toContain(DEPLOY_TOKEN.PREFIX);
+    expect(node).toContain(DEPLOY_TOKEN.PREFIX);
+    expect(readme).toMatch(new RegExp(`${API_KEY.PREFIX}|${DEPLOY_TOKEN.PREFIX}`));
   });
 
   it('the failure item can carry every wire error', () => {
