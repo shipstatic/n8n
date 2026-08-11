@@ -2,25 +2,36 @@
 
 Claude Code instructions for the **ShipStatic n8n Community Node**.
 
-**n8n-nodes-shipstatic** — n8n community node for the ShipStatic static hosting platform. Direct HTTP calls to the ShipStatic API — zero runtime dependencies. Published to npm. **Maturity:** v0.7.x — Deployments + Domains (15 operations), optional credentials, n8n Cloud verified.
+**n8n-nodes-shipstatic** — n8n community node for the ShipStatic static hosting platform. Direct HTTP calls to the ShipStatic API — zero runtime dependencies. Published to npm. **Maturity:** v1.x — the 1.x node is the one that speaks to the **2.x platform**. Deployments + Domains (15 operations), optional credentials, n8n Cloud verified.
 
 ## Architecture
 
 ```
 nodes/Shipstatic/
 ├── Shipstatic.node.ts     # Node definition + execute() — all 15 operations
+├── api.ts                 # The API base URL — one fact, two readers
 ├── Shipstatic.node.json   # Codex metadata (categories, aliases)
 └── shipstatic.svg         # Node icon (simplified logo, no SVG filters)
 
 credentials/
-└── ShipstaticApi.credentials.ts   # API key credential type
+└── ShipstaticApi.credentials.ts   # The one credential slot
+
+tests/
+├── Shipstatic.node.test.ts   # The node through a mock of n8n's helper contract
+├── contract.test.ts          # Fences: restated platform facts, catalogue, README, artifact
+├── wire.ts                   # Response fixtures, `satisfies`-checked against @shipstatic/types
+└── live.test.ts              # The same execute() against a real API (opt-in)
 ```
 
 ## Quick Reference
 
 ```bash
 pnpm build          # TypeScript → dist/ (uses n8n-node build)
-pnpm test --run     # All tests (~200ms)
+pnpm test --run     # All tests (~250ms; the live tier skips without SHIP_API_URL)
+pnpm coverage       # The suite plus the ratchet — what CI runs
+pnpm typecheck      # tsc over nodes, credentials AND tests, 0 errors
+pnpm lint           # Biome (the platform standard)
+pnpm lint:n8n       # The n8n Cloud VERIFICATION ruleset — see "Two linters"
 pnpm dev            # Dev mode with hot reload (icon won't show — see Known Gotchas)
 ```
 
@@ -34,39 +45,114 @@ Every operation is a direct HTTP call to `https://api.shipstatic.com`. Zero runt
 - Credential retrieval → Bearer token header
 - Routing by resource + operation → HTTP call via `httpRequestWithAuthentication`
 - Binary data → FormData multipart deploy (using Web API globals)
-- Response shaping (list fan-out, void → `{ success: true }`)
+- Response shaping (list fan-out; **acknowledgements pass through verbatim**)
 
-### HTTP Layer — Three Helpers, Each With One Job
+### The sandbox contract, and what it costs
+
+This is the ONE consumer in the constellation that cannot import the facts it
+depends on. `@n8n/eslint-plugin-community-nodes` enforces two rules that are
+platform contracts rather than style:
+
+- **`no-restricted-imports`** — any non-relative import in `nodes/` or
+  `credentials/` is refused. It matches on the import STATEMENT, so even
+  `import type`, which provably erases, is rejected. `@shipstatic/types` is
+  therefore a **devDependency the suite imports and the node restates**.
+- **`no-restricted-globals`** — `process`, `globalThis`, `setTimeout`,
+  `__dirname` and friends. n8n Cloud sandboxes community nodes away from these,
+  so reading `process.env` at module load would be a **ReferenceError before the
+  node loads**, taking every operation down. This is why there is no
+  `SHIP_API_URL` override in the artifact, unlike every other platform consumer.
+
+**Where a restatement is forced, a fence compares the copies** (root
+`CLAUDE.md`, "The Constellation Law"). `tests/contract.test.ts` holds every one:
+`API` against `DEFAULT_API`, `VIA` against `DeploymentVia.N8N`, the README's
+durations against `PUBLIC_DEPLOYMENT_TTL_SECONDS`, the operation catalogue
+against the node's own `options` arrays, the `my.shipstatic.com/api-key` link
+against `MY_API_KEY_URL`, `WireError` against `ErrorResponse`, `SPA_CONFIG` /
+`SHIP_JSON` against `SPA_DEFAULT_CONFIG` and its filename, the
+`Idempotency-Key` header against `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`, the
+password range against `PASSWORD_CONSTRAINTS`, the claim promise, the
+destructive-op hints, the credential shape, the README contract — and, the
+fence the manifest cannot be, the BUILT `dist/**/*.js` requiring nothing
+outside `n8n-workflow` and node builtins. `n8n-node build` is a `tsc`
+transpile, not a bundle, so a devDependency that reached a value position
+would install fine here and be MODULE_NOT_FOUND for every user.
+
+**Examined and REFUSED, recorded so nobody re-proposes them:** no codegen —
+deriving the ledger from types at build would make drift impossible instead of
+red, but for ~10 scalars and two small tables a fence that fails beats a
+generator plus a build stage plus a drift guard (revisit only if the ledger
+triples). No `@shipstatic/types/wire` subpath — the sandbox forbids this node
+importing it regardless, and no second hand-rolled client exists.
+`parseLabels` is NOT types' `deserializeLabels` — different domains (UI
+comma-split with absence semantics vs DB JSON-string with always-array
+semantics); do not "unify" them. `errorType` stays this node's word for the
+wire's `error` field — n8n's UI owns the `error` key; idiom, not drift. Two
+fences were likewise DECLINED with the rule as the reason: a `DEPLOY_FIELDS`
+row fence (loud, live-proven — a wrong field name fails every deploy on its
+first try) and a credential-placeholder prefix fence (a prefix change is a
+deliberate platform-wide break, never drift).
+
+### Two linters, and only one of them is a linter
+
+`pnpm lint` is Biome — the platform's one lint + format tool. `pnpm lint:n8n` is
+eslint carrying the community-nodes plugin above: the ruleset **n8n Cloud
+verification is judged against**, a contract with an external party that happens
+to ship as a plugin. Both run in CI. Formatting is Biome's alone.
+
+### The environment dimension lives in the harness
+
+Every other platform surface derives its API URL from an environment variable.
+This one cannot (see the sandbox contract), so `nodes/Shipstatic/api.ts` is a
+plain production constant — the single owner of the fact, read by both the node
+and the credential's connection test. `tests/live.test.ts` substitutes that one
+module to drive the same `execute()` against a non-production API:
+
+```bash
+SHIP_API_URL=https://api.<env> SHIP_TOKEN=ship-… pnpm test --run live
+```
+
+It skips unless `SHIP_API_URL` is set, so it never runs in CI. `SHIP_DEPLOY_TOKEN`
+unlocks the deploy-token scope block.
+
+### HTTP Layer — Two Helpers, Each With One Job
 
 ```
 apiRequest(ctx, method, path, body?)         JSON + n8n credential-aware auth (every CRUD op)
-fetchAgentToken(ctx)                         POST /tokens/agent — bootstrap for unauthenticated deploys
-uploadDeployment(ctx, authorization, fd)     POST /deployments multipart with manual Bearer
+uploadDeployment(ctx, formData, token?)      POST /deployments multipart, auth attached by hand
 ```
 
-All three wrap transport errors in `NodeApiError` at the I/O boundary so the rest of the node stays trivial — the dominant idiom in n8n core nodes.
+Both wrap transport errors in `NodeApiError` at the I/O boundary so the rest of the node stays trivial — the dominant idiom in n8n core nodes.
 
-**Why three?** Each uses the n8n helper that fits its job:
+**Why two?** Each uses the n8n helper that fits its job:
 - **`apiRequest`** → `helpers.httpRequestWithAuthentication`. Most ops need n8n's credential system to inject the Bearer header.
-- **`fetchAgentToken`** → `helpers.request`. The `/tokens/agent` endpoint is intentionally unauthenticated (it's the bootstrap for users who have no credentials), so n8n's credential helper can't be used.
-- **`uploadDeployment`** → `helpers.request`. n8n's modern `httpRequest` does not reliably handle multipart `FormData` (proven across v0.5–0.6 of this node); the legacy `request` helper is the only path that produces a working multipart upload — same fallback Slack, S3, and Google Drive use for file uploads. Auth is manual because the same upload may be Bearer'd with either an API key or a short-lived agent token.
+- **`uploadDeployment`** → `helpers.request`. n8n's modern `httpRequest` does not reliably handle multipart `FormData` (proven across v0.5–0.6 of this node); the legacy `request` helper is the only path that produces a working multipart upload — same fallback Slack, S3, and Google Drive use for file uploads. Auth is manual because deploy is the ONE operation with optional credentials, and the credential-aware helper cannot express "send this header only if a credential exists".
+
+**There was a third.** `fetchAgentToken` minted a short-lived token through `POST /tokens/agent` before every keyless deploy. The 2.x API deleted that endpoint, and the fix was a deletion rather than a port: anonymity is granted **in band** now — a credential-less `POST /deployments` receives the public-account agent identity per request, and the response carries the claim URL and expiry. The node's suite proves the deletion took by asserting a keyless deploy is exactly ONE request.
 
 ### Operations (15 total)
 
-Operation names mirror the CLI/SDK/MCP resource verbs: get, list, set, remove, records, dns, share, validate, verify. The deploy verb diverges intentionally — n8n surfaces "Deploy" as the user-facing action (matching the `ship <path>` shortcut UX), while the CLI/SDK method and MCP tool are named `upload`. Same operation, different label.
+Operation names mirror the CLI/SDK/MCP resource verbs: get, list, set, delete, records, dns, share, validate, verify. **`delete`, never `remove`** — the 2026-07 rename swept the SDK (`delete()`), the CLI (`ship … delete`) and the MCP (`*_delete`); n8n was the last surface off it, and `tests/contract.test.ts` holds it there. The deploy verb diverges intentionally — n8n surfaces "Deploy" as the user-facing action (matching the `ship <path>` shortcut UX), while the CLI/SDK method and MCP tool are named `upload`. Same operation, different label.
+
+The node ships `version: 1` as a scalar, and the non-use of n8n's node-version
+machinery is a decision, not an omission: `version: [1, 2]` arrays are for
+platforms with users to migrate, and 1.0 was a clean break for a handful of
+users (the credential field renames, `remove` → `delete`, the anonymous-deploy
+mechanism change) under the pre-launch clean-break law. Record the non-use,
+don't build it.
 
 | #   | Resource   | Operation | HTTP Call                                              |
 | --- | ---------- | --------- | ------------------------------------------------------ |
 | 1   | Deployment | Deploy    | `POST /deployments` multipart FormData (optional auth) |
 | 2   | Deployment | Get       | `GET /deployments/{id}`                                |
 | 3   | Deployment | List      | `GET /deployments` → fan out `.deployments`            |
-| 4   | Deployment | Remove    | `DELETE /deployments/{id}` → `{success: true}`         |
+| 4   | Deployment | Delete    | `DELETE /deployments/{id}` → `{deployment, status: 'deleting'}` (202) |
 | 5   | Deployment | Set       | `PATCH /deployments/{id}` body `{labels}`              |
 | 6   | Domain     | DNS       | `GET /domains/{name}/dns`                              |
 | 7   | Domain     | Get       | `GET /domains/{name}`                                  |
 | 8   | Domain     | List      | `GET /domains` → fan out `.domains`                    |
 | 9   | Domain     | Records   | `GET /domains/{name}/records`                          |
-| 10  | Domain     | Remove    | `DELETE /domains/{name}` → `{success: true}`           |
+| 10  | Domain     | Delete    | `DELETE /domains/{name}` → `{domain}` (200)            |
 | 11  | Domain     | Set       | `PUT /domains/{name}` body `{deployment?, labels?}`    |
 | 12  | Domain     | Share     | `GET /domains/{name}/share`                            |
 | 13  | Domain     | Validate  | `POST /domains/validate` body `{domain: name}`         |
@@ -84,21 +170,46 @@ Both modes use n8n's `request` helper with the `formData` option — the same pr
 
 - `files[]` — one File entry per item (or one from text content)
 - `checksums` — JSON array of MD5 hashes (via `node:crypto`)
-- `via` — always `"n8n"`
+- `via` — always `"n8n"` (the `VIA` constant; fenced against `DeploymentVia.N8N`)
 - `labels` — optional JSON array
 - `password` — optional plaintext (6–128 chars); the API hashes it server-side
 
 **No server-processing flags.** `/deployments` is a pure file pipe — n8n never sets `spa`, `build`, or `prerender`. Those flags are reserved for first-party UI (`web/my`, `web/www`) routing through `/upload`. See `cloudflare/api/CLAUDE.md` "Endpoint Purity". For SPA routing, users include `ship.json` in their input files; the deployment serves it as-is.
 
-### Deploy Auth — Optional Credentials
+### Deploy Auth — One Slot, Optional
 
-Deploy works without credentials. When no API key is configured, the node fetches a short-lived agent token from `POST /tokens/agent` and uses that as the Bearer token. All other operations require an API key and use `httpRequestWithAuthentication`.
+The credential has **one field, `token`**, and it takes either platform
+population: a `ship-` API key or a `deploy-` deploy token. The node never
+inspects the prefix — the server classifies, with the same `classifyToken` the
+SDK uses, so client and server cannot disagree on dispatch. The credential TYPE
+id stays `shipstaticApi`: it names the platform, and renaming it would orphan
+every stored credential.
 
-The `handleDeploy` function uses `request` (with `formData`) for both the agent token and deploy calls. It's extracted from `execute()` to keep credential resolution (`getCredentials`) separate from request logic.
+Deploy attaches `Authorization` only when a token exists. Two boundary rules:
+
+- **An empty field is absence of intent**, not a credential — it deploys
+  anonymously rather than presenting a bare `Bearer `. Same normalization the
+  SDK applies to an empty `SHIP_TOKEN`.
+- **Fail-closed anonymity**: a token that is present and rejected fails with a
+  typed error. It never demotes the deploy to an anonymous one under
+  PUBLIC_ACCOUNT.
+
+**The credential test's documented limit.** `GET /account` is the connection
+test, and a `deploy-` token FAILS it — deploy tokens are deploy-scoped, and
+`/account` is not their right. This is not a wart to route around: the API
+refuses a deploy token at the auth boundary with a 401 **byte-identical to a
+garbage credential** (`token_endpoint_not_allowed` is internal only), so no
+probe could distinguish the two. Dropping the test or pointing it at `/ping`
+would trade a truthful "this credential can use the whole node" signal for a
+vacuous reachability blink. The field description and the 401 rule both say so,
+and `tests/live.test.ts` observes it against a real API.
+
+The `handleDeploy` function is extracted from `execute()` to keep credential
+resolution (`getCredentials`) separate from request logic.
 
 ### Global vs Per-Item Operations
 
-`list` and `account.get` are **global** — their result doesn't depend on input items. They run **once** regardless of input item count, and the output's `pairedItem` traces back to *all* input items so n8n's data flow stays honest. Per-item operations (`get`, `set`, `remove`, `dns`, `share`, `validate`, `verify`) loop over input items as usual, with `pairedItem: { item: i }`.
+`list` and `account.get` are **global** — their result doesn't depend on input items. They run **once** regardless of input item count, and the output's `pairedItem` traces back to *all* input items so n8n's data flow stays honest. Per-item operations (`get`, `set`, `delete`, `dns`, `share`, `validate`, `verify`) loop over input items as usual, with `pairedItem: { item: i }`.
 
 This matters: a workflow piping 50 items into "list" should not fire 50 identical API calls. The `isGlobalOp` switch in `execute()` controls iteration count.
 
@@ -120,13 +231,122 @@ Optional parameters are grouped into `type: 'collection'` fields named `options`
 - **Deploy**: Labels, Password → accessed via `this.getNodeParameter('options', i) as IDataObject`
 - **Domain Set**: Deployment, Labels → same pattern
 
-### Return All / Limit
+### Return All / Limit — the walk
 
-Both List operations include `returnAll` (boolean) and `limit` (number). Client-side slicing via `.slice(0, limit)` — the API doesn't paginate.
+**The 2.x API paginates every list.** `ListOptions {limit, cursor}`; omitting
+both returns the server's default first page; `cursor: null` is the entire
+has-more signal. The 1.x API did not paginate, which is why this node used to
+fetch once and slice — and why `Return All: true` silently stopped at the
+server's default. `returnAll` is a CONTRACT WORD in n8n's ecosystem: every core
+node's `returnAll` walks pages, and n8n's own lint rule
+(`node-param-description-wrong-for-return-all`) enforces the sentence
+"Whether to return all results or only up to a given limit" verbatim. The
+phrase never needed fixing; the behaviour did.
 
-### Error Handling
+`fetchList()` is the walk, and **no page size appears in this repo**:
 
-Uses n8n's standard pattern: `continueOnFail()` returns `{ error: message }` items; otherwise throws `NodeOperationError` with `itemIndex` for precise error attribution.
+- `returnAll: true` → request with no `limit`, follow `cursor` until `null`.
+- `returnAll: false` + `limit: N` → ask for what is still needed, and keep going
+  if the server returned less. The server clamps silently at its own cap; the
+  clamp is handled by CONTINUING, never by knowing the number. Restating the
+  cap here would give one fact two owners.
+- An empty page with a live cursor terminates the walk — out of contract, and
+  looping on it would hang an n8n execution rather than fail it.
+
+`listSearch` uses the same contract under n8n's own name: `INodeListSearchResult`
+carries `paginationToken`, and the listSearch signature receives it back on the
+next call. **The cursor IS the pagination token**, so the dropdowns scroll
+through everything instead of stopping at page one. Filtering stays client-side
+and therefore per page — the API has no filter query.
+
+`cursor` is deliberately ABSENT from the item json: `returnAll`/`limit` is n8n's
+pagination abstraction, and handing a workflow a cursor it has no field to feed
+back would be a second, broken one.
+
+### Why this was invisible for a whole wave
+
+The §0 break inventory scanned the node's code for stale calls — the mint, the
+verbs, the credential — and caught every one. It could not catch pagination,
+because **a missing feature is invisible in the code that lacks it**. Neither
+could the live tier (the dev account holds fewer than one page) nor the typed
+fixtures (they carry `cursor`; the node ignored it). The inventory that finds
+this class runs the other direction: **the API's contract against the
+consumer's coverage, never the consumer against itself.**
+
+### Error Handling — the wire rides beside the message
+
+Uses n8n's standard pattern: `continueOnFail()` returns an error item; otherwise
+throws with `itemIndex` for precise attribution.
+
+**The item is typed.** The platform's law is "clients branch on error type and
+status, never on message strings", and a workflow engine is the caller MOST able
+to obey it — this json feeds an IF node. So `error` stays the message string
+(n8n's UI renders it) and the wire's own fields ride BESIDE it:
+
+```
+{ error: "Deployment not found", errorType: "not_found", status: 404, details?: … }
+```
+
+Captured by `readWireError()` at the two request helpers, before `NodeApiError`
+wraps the failure, and read back at both `continueOnFail` sites via
+`errorItem()`. n8n's helpers surface a non-2xx body in different places
+depending on which of them threw, so each known shape is read and anything else
+is treated as ABSENT — **a transport failure carries `error` alone**. Inventing
+an `errorType` for a DNS failure would claim the platform answered when nothing
+did. Same posture as the MCP's `toErrorResult`.
+
+This was the failure-path mirror of returning delete acknowledgements verbatim,
+and it was missed by the wave that fixed the success path.
+
+### SPA parity
+
+The SDK's deploy path runs `detectAndConfigureSPA` for the CLI, both MCP
+transports and the VS Code extension. This node is direct HTTP, so without a
+mirror a React build deployed from a workflow serves 404s on every route but
+`/` — on the ONE surface whose users are least equipped to know that
+`ship.json` is the remedy.
+
+`detectSpa()` mirrors the SDK exactly: `POST /spa-check` (public, no credential
+— verified anonymously against dev), and on `isSPA` append the restated
+`SPA_CONFIG` as `ship.json`. It skips when the user shipped their own config,
+skips when `index.html` is absent or over 100KB, and **continues silently on
+any failure** — detection is an enhancement, never a gate on the deploy. The
+append happens BEFORE formData is built so the config's checksum rides along;
+after it, the API would reject the deploy for a length mismatch.
+
+### Option completeness
+
+Every absence is a decision, recorded — the MCP's section, translated:
+
+- **No `tokens` operations.** The MCP's reasoning verbatim: a credential is
+  configured by the human, never minted by the agent that would then hold it.
+- **No `ping` / `limits` operations.** Diagnostics, not workflow steps.
+- **No `GET /labels` operation.** An open product call platform-wide, not an
+  n8n-specific gap.
+- **No client-side prevalidation** of blocked extensions or junk files. Inputs
+  here are curated by upstream nodes, the API is the security boundary, and its
+  messages relay through `NodeApiError` intact. A second validator would be a
+  second owner of the rules.
+- **No `spa` / `build` / `prerender` flags.** `/deployments` is a pure file
+  pipe; those belong to first-party UI through `/upload`. (SPA *detection* is
+  different — it appends a file, it does not ask the server to process one.)
+- **SPA detection degrades silently for heavy KEYLESS use, by design.**
+  `/spa-check` charges an anonymous caller the public write bucket (its AI tier
+  costs real money) and exempts a credentialed one — which is why `detectSpa`
+  presents the token when there is one. A credential-less workflow deploying in
+  a tight loop will eventually get a 429 on the pre-flight; it is swallowed, so
+  the deploy still succeeds and only the routing config stops being added.
+  Discovered empirically while running the live tier repeatedly. If someone
+  reports "SPA routing works sometimes", this is it — and the answer is an API
+  key, not a node change.
+- **No explicit deploy timeout.** The node passes none, so n8n's own default
+  applies and the deploy is bounded by the operator's `EXECUTIONS_TIMEOUT`.
+  This is deliberate: the SDK needed `DEFAULT_DEPLOY_TIMEOUT` because it drives
+  `fetch` and had to choose a number, whereas the helper here is HOST-provided
+  and a hardcoded value would override a deliberate operator setting. **If a
+  large deploy is ever reported timing out**, that is the thing to re-check —
+  set `timeout` on the `uploadDeployment` request options, sized like the SDK's
+  (30s cannot carry 50MB over a slow link).
 
 ### Labels
 
@@ -138,18 +358,24 @@ Labels are comma-separated strings in the UI, parsed to `string[]` by `parseLabe
 
 `usableAsTool: true` means n8n's AI Agent feature exposes this node's operations to LLMs using the `description` strings as the tool catalog. We deliberately keep descriptions terse for the dropdown UX, but **append agent guidance** to the high-stakes ops:
 
-- **Deploy** mentions the claim URL convention and the password-Options affordance.
-- **Deployment Remove / Domain Remove** include "Confirm with the user before calling this — it cannot be undone."
+- **Deploy** mentions the claim URL convention and the password-Options affordance. The claim promise is FENCED (`tests/contract.test.ts`) — it is the only way a keyless deployment is ever kept, so an edit that drops it fails the suite.
+- **Deployment Delete / Domain Delete** include "Confirm with the user before calling this — it cannot be undone." A fence in `tests/contract.test.ts` holds both.
 
 This is the n8n-side equivalent of MCP's `You MUST confirm` and `always show the URL/claim` agent hints. The MCP wording is more imperative because MCP-driven agents typically converse with end-users; n8n-driven agents typically pipe results downstream, so the wording is softer. If you add a destructive op, mirror this pattern.
 
 ## Testing
 
 ```bash
-pnpm test --run     # All tests (~230ms)
+pnpm test --run     # All tests (~250ms)
+pnpm coverage       # …plus the ratchet: 100 statements/functions/lines, 98.2 branches
 ```
 
-Tests mock `helpers.request` and `helpers.httpRequestWithAuthentication` — no real HTTP calls.
+The default tier mocks `helpers.request` and `helpers.httpRequestWithAuthentication` — no real HTTP calls. Two files sit beside it:
+
+- **`tests/contract.test.ts`** — the fences (see "The sandbox contract"). They hold what a percentage cannot: restated platform values, the operation catalogue, the published README, and the built artifact's imports.
+- **`tests/live.test.ts`** — the same `execute()` against a real API, opt-in via `SHIP_API_URL`. It is the only tier that can observe the platform rather than the node's self-consistency, and it is what proved the `/tokens/agent` deletion, the claim/expiry pass-through, `via` landing in the database, and the deploy-token 401.
+
+The branch ratchet is 98.2 for exactly the implicit `else` arms on the `operation` chains in `execute()`, unreachable because n8n only ever passes a value from the `options` array it rendered. Named in `vitest.config.ts`, not rounded away.
 
 ### Organization
 
@@ -158,15 +384,21 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 | Describe | Surface tested |
 |---|---|
 | `parseLabels` | Pure helper |
-| `Deploy — authentication` | `handleDeploy` credential resolution + `fetchAgentToken` fallback |
+| `stripCommonPrefix` | Pure helper |
+| `extractResourceLocatorValue` | Pure helper |
+| `Deploy — authentication` | `handleDeploy` credential resolution + the anonymous door |
 | `Deploy — file collection & formData` | `handleDeploy` file pipeline (binary/text, paths, MD5, payload) |
-| `Deploy — error handling` | `handleDeploy` failure paths (empty files, agent-token fail, upload fail, continueOnFail trace) |
+| `Deploy — SPA routing` | `handleDeploy` SPA detection + the `ship.json` append |
+| `Deploy — idempotency` | `handleDeploy` `Idempotency-Key` threading |
+| `Deploy — error handling` | `handleDeploy` failure paths (empty files, rejected token, rate limit, continueOnFail trace) |
 | `Deployment operations` | `execute()` routing for the Deployment resource |
 | `Domain operations` | `execute()` routing for the Domain resource (incl. set merge-upsert semantics) |
 | `Auth gate for non-deploy operations` | `execute()` credential gate |
 | `Global vs per-item iteration` | `execute()` list/account run-once + list controls (returnAll/limit) |
+| `Pagination` | `fetchList()` cursor walk (returnAll / limit / empty-page termination) |
 | `Error handling — NodeApiError & continueOnFail` | `execute()` per-item error wrapping |
 | `listSearch — credential probe & filtering` | `methods.listSearch` (resource locator backends) |
+| `listSearch — pagination` | `searchPage()` `paginationToken` threading |
 
 ### Adding new coverage
 
@@ -180,7 +412,8 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 2. Add parameter fields with `displayOptions` to show/hide per operation
 3. Add HTTP call in the `execute()` method's resource/operation routing via `apiRequest()`
 4. List operations: fan out the array into separate n8n items
-5. Void operations: return `{ success: true }`
+5. **Never fabricate a response.** The wire's acknowledgement IS the item json — `{ deployment, status: 'deleting' }`, `{ domain }`, `{ domain, hash }`. The old doctrine here was "void operations: return `{ success: true }`", and it was the platform's "state, not boolean" anti-pattern with a WORKFLOW ENGINE as its consumer: the caller most able to branch on structure, handed the least. A deployment delete is asynchronous — the site stays served until cleanup completes — and `success: true` threw exactly the state a workflow would want to wait on.
+6. Add it to `CATALOGUE` in `tests/contract.test.ts` and to the README table; both are fenced.
 
 ## Known Gotchas
 
@@ -217,7 +450,7 @@ const name = this.getNodeParameter('domain', i, '', { extractValue: true }) as s
 const linked = extractResourceLocatorValue(domainOptions.deployment);
 ```
 
-`searchDeployments` / `searchDomains` filter client-side (the API doesn't paginate; full list comes back from one call) and use the same `hasCredentials()` probe as the rest of the node — silent empty results when the user hasn't configured credentials yet, real errors surface once they have.
+`searchDeployments` / `searchDomains` share `searchPage()`: one page per call, the API's `cursor` returned as n8n's `paginationToken` so the dropdown scrolls through everything, and a client-side filter over that page (the API has no filter query). Both use the same `hasCredentials()` probe as the rest of the node — silent empty results when the user hasn't configured credentials yet, real errors surface once they have.
 
 ---
 

@@ -1,0 +1,33 @@
+{
+  // Typecheck config: `nodes`, `credentials` AND `tests`. This is what
+  // `pnpm typecheck` runs, and what the pre-commit hook picks up.
+  //
+  // `tsconfig.json` stays build-shaped — `n8n-node build` is a `tsc` emit into
+  // `dist/`, and `files: ["dist"]` publishes whatever lands there, so adding
+  // `tests/**` to the build config would ship the suite to npm. Hence two
+  // files, the same split `npm/ship` and `integrations/mcp` carry, and NOT
+  // `integrations/vscode`'s single config — nothing there is built by tsc.
+  //
+  // Covering `tests` is the load-bearing half: vitest transpiles through
+  // esbuild WITHOUT typechecking, so until this file existed nothing checked
+  // the suite at all. That is what makes the `satisfies` clauses on the wire
+  // fixtures a fence rather than decoration — an API reshape turns the suite
+  // red here, at compile time, instead of in someone's workflow.
+  //
+  // `module` is overridden because the two trees run in different worlds. n8n
+  // loads the artifact as CommonJS, so the BUILD config must stay `commonjs`
+  // and it remains the authority on emit — `pnpm build` is a real `tsc` run.
+  // The suite runs under vitest as ESM and reads its own location through
+  // `import.meta.url`, which `commonjs` rejects outright. Checking each tree
+  // under the module system it actually executes in is the accurate choice;
+  // sharing one that fits neither would only make the error go away.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "module": "esnext",
+    "moduleResolution": "bundler"
+  },
+  "include": ["credentials/**/*", "nodes/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
