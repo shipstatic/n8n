@@ -1,0 +1,65 @@
+// Platform-standard Biome config (one tool for lint + format; exact-pinned
+// version so formatting never drifts between repos). The platform block is
+// byte-identical across ShipStatic repos; per-repo deviations are marked
+// with "Deviation:" comments explaining why.
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    // SVGs are image assets, not markup to lint.
+    "includes": ["**", "!**/*.svg"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": {
+        // Visible in editors and CI summaries without blocking the build.
+        "noExplicitAny": "warn"
+      }
+    }
+  },
+  "overrides": [
+    {
+      // Tests may use `!`, `any`, ANSI-strip regexes, and template-syntax
+      // fixtures freely — they assert the invariants production code must
+      // prove. Everything else lintable is fixed in the tests themselves.
+      "includes": [
+        "**/tests/**",
+        "**/__tests__/**",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "e2e/**",
+        "test-utils/**"
+      ],
+      "linter": {
+        "rules": {
+          "style": { "noNonNullAssertion": "off" },
+          "suspicious": {
+            "noExplicitAny": "off",
+            "noControlCharactersInRegex": "off",
+            "noTemplateCurlyInString": "off"
+          }
+        }
+      }
+    }
+  ]
+}
