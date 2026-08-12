@@ -54,7 +54,7 @@
     "@biomejs/biome": "2.5.5",
     "@eslint/js": "^9.39.4",
     "@n8n/node-cli": "0.23.1",
-    "@shipstatic/types": "2.7.0-beta.4",
+    "@shipstatic/types": "2.7.0",
     "@vitest/coverage-v8": "4.1.10",
     "eslint": "^9.39.4",
     "typescript": "^6.0.2",
