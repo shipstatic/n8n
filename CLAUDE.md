@@ -109,7 +109,7 @@ and the credential's connection test. `tests/live.test.ts` substitutes that one
 module to drive the same `execute()` against a non-production API:
 
 ```bash
-SHIP_API_URL=https://api.<env> SHIP_TOKEN=ship-… pnpm test --run live
+SHIP_API_URL=https://api.<env> SHIP_TOKEN=ship-your-api-key pnpm test --run live
 ```
 
 It skips unless `SHIP_API_URL` is set, so it never runs in CI. `SHIP_DEPLOY_TOKEN`

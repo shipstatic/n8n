@@ -18,7 +18,7 @@
  * SKIPS unless `SHIP_API_URL` is set, so it never runs in CI and never gates a
  * publish. To run it:
  *
- *   SHIP_API_URL=https://api.<env> SHIP_TOKEN=ship-… pnpm test --run live
+ *   SHIP_API_URL=https://api.<env> SHIP_TOKEN=ship-your-api-key pnpm test --run live
  *
  * The `SHIP_TOKEN` half unlocks the authenticated gates; `SHIP_DEPLOY_TOKEN`
  * unlocks the deploy-token scope asymmetry. Each block skips independently, so
