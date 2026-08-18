@@ -408,6 +408,33 @@ after it, the API would reject the deploy for a length mismatch.
 
 ### Option completeness
 
+**The inventory that produced this list ran API-first, 2026-08-19** — the
+direction this file's own "Why this was invisible for a whole wave" section
+prescribes, because auditing the consumer against itself cannot find a missing
+feature. Every non-admin route in `cloudflare/api/src/routes/` was enumerated
+and diffed against the node's fifteen operations. **All fifteen map to a live
+route; nothing the node offers is stale.** The uncovered routes, each with a
+verdict rather than a silence:
+
+| Uncovered route | Verdict |
+|---|---|
+| `GET /deployments/:deployment/config` | **Refuse.** Neither the SDK nor either MCP exposes it — measured, not assumed. It serves the dashboard's config viewer; a workflow that wants the routing config has the `ship.json` it deployed |
+| `GET /domains/:domain/propagation` | **Refuse.** Same: no client exposes it. It backs the DNS-setup UI's live poll, which is a UI affordance rather than a workflow step — and `verify` is the operation that actually advances state |
+| `GET /labels` | **Refuse** — already recorded below; an open product call platform-wide, not an n8n gap |
+| `POST/GET/DELETE /tokens*` | **Refuse** — already recorded below (a credential is configured by the human) |
+| `GET /ping`, `GET /limits` | **Refuse** — already recorded below (diagnostics, not workflow steps) |
+| `GET /account/consent`, `PUT /account/key`, `POST /account/claim`, `DELETE /account` | **Refuse.** Account *administration*, not automation. `PUT /key` mints a credential (same reason as `/tokens`), `DELETE /account` is destructive-irreversible with no workflow use, and claiming is a human act on a one-time URL the deploy response already hands over |
+| `GET /activities` | **Refuse.** An audit feed for the dashboard. A workflow wanting deployment state reads the deployment |
+| `GET /domains-check`, `POST /setup`, `POST /upload`, `/billing/*`, `/webhooks/*`, `/unsubscribe`, `/admin/*` | **Refuse by standing law** — first-party-only surfaces. `/upload` in particular is the flagged-processing door; `/deployments` is the public pure file pipe, and that split is the platform's, not this node's |
+
+Note `POST /spa-check` is *used* but is not an operation — it is the SPA
+mirror's pre-flight, correctly invisible to the user.
+
+**The node's surface is exactly the hosted MCP's fifteen.** That convergence is
+worth stating because it is the check on both: two independently-maintained
+agent-facing surfaces landing on the same fifteen verbs is evidence the line
+between "workflow step" and "UI affordance" is drawn in the right place.
+
 Every absence is a decision, recorded — the MCP's section, translated:
 
 - **No `tokens` operations.** The MCP's reasoning verbatim: a credential is
@@ -445,6 +472,40 @@ Every absence is a decision, recorded — the MCP's section, translated:
 Labels are comma-separated strings in the UI, parsed to `string[]` by `parseLabels()`. Returns `undefined` for empty input (not empty array) to distinguish "not provided" from "clear all".
 
 **Domain Set vs Deployment Set merge semantics:** both use the same rule — if the user added the Labels option (key present in `options`), behavior is "set" (`['a','b']` to replace, `[]` to clear). If they didn't add Labels at all, the key is omitted from the request body and the API preserves existing labels. This matches the merge-upsert contract on `PUT /domains/:name`.
+
+### How an AI Agent actually reaches this node — MEASURED, not assumed
+
+Measured 2026-08-19 against `n8n-workflow@2.12.0`
+(`dist/esm/from-ai-parse-utils.js`, `constants.js`). This is the premise the
+Files (JSON) input mode rests on, so it is recorded as a measurement with its
+date and version rather than as a belief.
+
+**The agent's only channel into a node is `$fromAI()`, and it carries four
+types: `string`, `number`, `boolean`, `json`.** A user (or n8n's own
+auto-override, marked with `/*n8n-auto-generated-fromAI-override*/`) puts a
+`$fromAI('key', 'description', 'type', default)` call into a parameter's
+expression; n8n extracts those calls and builds the tool schema the LLM sees
+from them.
+
+Two consequences, and both are load-bearing:
+
+1. **There is no binary channel in a tool invocation.** `$fromAI` has no
+   binary type, and binary data reaches a node through input items rather than
+   parameters. So Binary Files mode is genuinely unreachable from a pure agent
+   tool call — **the Files (JSON) mode's justifying premise holds.**
+2. **A `json` parameter arrives ALREADY PARSED.** `generateZodSchema` builds a
+   custom validator for the `json` case requiring "a non-empty object or a
+   non-empty array" — it type-checks the *value*, so what lands on the
+   parameter is a real array, not a string containing one. **The
+   resolved-value shape is therefore the PRIMARY agent path, not an edge
+   case**, which is why the files field must accept both shapes rather than
+   treating `JSON.parse` as the normal route and the rest as defensive
+   programming.
+
+Still owed at T7: confirming in a live n8n UI that the `files` field surfaces
+in the generated tool schema and how the auto-override presents it. The
+mechanism above is read from the shipped implementation; the UI is the part a
+source read cannot settle.
 
 ### AI-Agent Hints in Operation Descriptions
 
