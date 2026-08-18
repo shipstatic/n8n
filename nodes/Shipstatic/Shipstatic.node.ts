@@ -479,6 +479,13 @@ async function handleDeploy(
   if (labels) formData.labels = JSON.stringify(labels);
   const password = (options.password as string | undefined)?.trim();
   if (password) formData.password = password;
+  // Sent iff the user ADDED the option — key presence, never truthiness. A `0`
+  // fed by an expression forwards and the server refuses it with its own
+  // sentence, which is the whole point: this node is not a second validator of
+  // a range it does not own. (The truthiness gate `labels`/`password` use is
+  // right for them — an empty string is absence of intent — and wrong here,
+  // where `0` is a value the user typed.)
+  if (options.ttl !== undefined) formData.ttl = String(options.ttl);
 
   // 5. Upload — with the token when one is configured, anonymously when not
   const idempotencyKey = (options.idempotencyKey as string | undefined)?.trim();
@@ -861,6 +868,26 @@ export class Shipstatic implements INodeType {
             default: true,
             description:
               'Whether to detect a single-page app (React, Vue, Svelte…) and add the routing config it needs, so deep links resolve instead of 404ing. Matches what the CLI and the AI-agent integrations already do. Turn it off, or include your own routing config among the deployed files, to take control.',
+          },
+          {
+            displayName: 'TTL',
+            name: 'ttl',
+            type: 'number',
+            // A UI convenience default owned by THIS node, the same way
+            // `fileName`'s `index.html` is — not a restatement of anything in
+            // `@shipstatic/types`, so nothing fences it. It exists because a
+            // number field cannot ride the Labels absence pattern: adding the
+            // option puts the key in the collection at whatever the default is,
+            // so the default is what an unedited "Add Option" click sends. An
+            // hour is a defensible preview lifetime; the server owns the range.
+            default: 3600,
+            // A RESTATEMENT of `TTL_CONSTRAINTS.MIN_SECONDS`, fenced against the
+            // owner in `tests/contract.test.ts`. No `maxValue`: the ceiling is a
+            // year, nobody reaches it by accident, and the server's own sentence
+            // teaches it better than a spinner that silently clamps.
+            typeOptions: { minValue: 1 },
+            description:
+              "How long the deployment stays live, in seconds — the platform reclaims it when the time is up. Leave this option off for a deployment that never expires. Requires credentials: an anonymous deployment already expires on the platform's own schedule, and a TTL on one is refused. A deployment carrying a TTL cannot be linked to a custom domain — deploy without one if the site needs a domain.",
           },
         ],
       },

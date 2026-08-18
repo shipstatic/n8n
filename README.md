@@ -53,6 +53,20 @@ Two ways to take control: turn **Single-Page App Routing** off under Options, or
 include your own `ship.json` among the deployed files — the node never
 overwrites one you shipped yourself.
 
+### Deployments that clean up after themselves
+
+Deploying a preview for every pull request, or a nightly build nobody needs to
+keep? Add **TTL** under Options and the deployment expires on its own after
+that many seconds — the platform reclaims it, and you are not left pruning.
+
+Two things to know before you reach for it:
+
+- **It needs credentials.** An anonymous deployment already expires on the
+  platform's schedule, so a TTL on one is refused rather than quietly ignored.
+- **A deployment with a TTL cannot be linked to a custom domain.** A domain is
+  a commitment and a deadline is its opposite — deploy without a TTL if the
+  site needs one.
+
 ### Retries that do not deploy twice
 
 n8n's **Retry On Fail** makes a workflow the most likely thing to retry a deploy

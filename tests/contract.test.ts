@@ -32,6 +32,7 @@ import {
   PASSWORD_CONSTRAINTS,
   PUBLIC_DEPLOYMENT_TTL_SECONDS,
   SPA_DEFAULT_CONFIG,
+  TTL_CONSTRAINTS,
 } from '@shipstatic/types';
 import type { INodePropertyOptions } from 'n8n-workflow';
 import { describe, expect, it } from 'vitest';
@@ -263,6 +264,48 @@ describe('operation catalogue', () => {
 
     expect((password as unknown as { description: string })?.description).toContain(range);
     expect(README).toContain(range);
+  });
+
+  it("the TTL field's floor is the one @shipstatic/types owns", () => {
+    // `typeOptions.minValue` is a RESTATEMENT of `TTL_CONSTRAINTS.MIN_SECONDS`
+    // — the one number this field states — so it is fenced like every other
+    // forced copy. There is deliberately no `maxValue` to fence: the ceiling is
+    // a year, unreachable by accident, and a silently-clamping spinner teaches
+    // worse than the server's own refusal sentence.
+    const ttl = node.description.properties
+      .flatMap((p) => (p.options ?? []) as INodePropertyOptions[])
+      .find((o) => (o as unknown as { name: string }).name === 'ttl');
+
+    expect((ttl as unknown as { typeOptions?: { minValue?: number } })?.typeOptions?.minValue).toBe(
+      TTL_CONSTRAINTS.MIN_SECONDS,
+    );
+  });
+
+  it('the TTL field teaches the domain incompatibility', () => {
+    // A LOCAL presence pin, and the reason it is local is recorded rather than
+    // assumed. `PARAM_DESCRIPTIONS.ttl` in `@shipstatic/mcp` states the same
+    // three facts, and a cross-repo prose fence against it was REFUSED: that
+    // sentence is written for an LLM reading a tool catalogue, this one for a
+    // person reading a field description in a browser. Same different-domains
+    // reason this repo already records for `parseLabels` vs `deserializeLabels`
+    // — and taking the dependency would drag the MCP SDK into this suite's
+    // graph to fence one sentence.
+    //
+    // EXPIRY: if this description ever teaches a VALUE (a range, a ceiling),
+    // that value gets fenced against `TTL_CONSTRAINTS`, which this file already
+    // imports. Prose that teaches a number is a restatement; prose that teaches
+    // a rule is this node's own voice.
+    //
+    // The clause is pinned because it is the one fact a user meets as a failure
+    // rather than as a limit: this README's example workflow is
+    // Deploy → Domain: Set, which is exactly the combination a TTL forbids.
+    const ttl = node.description.properties
+      .flatMap((p) => (p.options ?? []) as INodePropertyOptions[])
+      .find((o) => (o as unknown as { name: string }).name === 'ttl');
+
+    expect((ttl as unknown as { description: string })?.description).toContain(
+      'cannot be linked to a custom domain',
+    );
   });
 
   it('warns the agent before every destructive operation', () => {

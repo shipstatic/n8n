@@ -41,7 +41,7 @@ export default defineConfig({
        * wave: a ratchet that is not raised when coverage rises is a floor the
        * next gains erode back through.
        *
-       * It moved 98.2 → 98.18 → 98.2 across this wave, and the dip was NOT decay — the uncovered set
+       * It moved 98.2 → 98.18 → 98.2 across that wave, and the dip was NOT decay — the uncovered set
        * is byte-identical, still those three arms. Deleting the SPA index-size
        * guard removed two COVERED arms, which shrinks the denominator and
        * lowers the ratio while improving the code. Worth naming because it is
@@ -50,6 +50,14 @@ export default defineConfig({
        * arms, and they are these three". When the two disagree, the enumerated
        * arms are the claim; the number is only how it is enforced.
        *
+       * Raised 98.2 → 98.22 on 2026-08-19 with the TTL option (T1): 164/167
+       * became 166/169. The uncovered SET did not move — still exactly the
+       * three `operation` chain `else` arms — but adding two covered branches
+       * grew the denominator, so the ratio rose and the floor rises with it.
+       * That is the ratchet working in the direction the wobble above went in
+       * reverse: re-measure and re-raise every time, or the next regression
+       * hides in the slack the last improvement created.
+       *
        * NOTE: thresholds catch coverage DECAY. They cannot catch a test that
        * asserts nothing; a tautology neither raises nor lowers coverage. The
        * fences in `tests/contract.test.ts` are what hold the contracts a
@@ -57,7 +65,7 @@ export default defineConfig({
        */
       thresholds: {
         statements: 100,
-        branches: 98.2,
+        branches: 98.22,
         functions: 100,
         lines: 100,
       },

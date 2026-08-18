@@ -371,6 +371,36 @@ describe('Deploy — file collection & formData', () => {
     expect(getFormData(ctx).password).toBeUndefined();
   });
 
+  it('sends ttl in formData when the option was added', async () => {
+    const ctx = createDeployContext({ options: { ttl: 3600 } });
+
+    await node.execute.call(ctx);
+
+    // A multipart body is all strings — the API's `collectTtlFromFormData`
+    // does the `Number()` on its side, so producing the string is this end's job.
+    expect(getFormData(ctx).ttl).toBe('3600');
+  });
+
+  it('omits ttl when the option was not added', async () => {
+    const ctx = createDeployContext({ options: {} });
+
+    await node.execute.call(ctx);
+
+    expect(getFormData(ctx).ttl).toBeUndefined();
+  });
+
+  it('forwards a zero ttl rather than swallowing it — the server owns the range', async () => {
+    // Key presence, not truthiness. `0` is below the platform's minimum, and
+    // the refusal belongs to the server: a client that silently dropped it
+    // would be a second validator, and the user would see a deployment that
+    // never expires after asking for one that expires immediately.
+    const ctx = createDeployContext({ options: { ttl: 0 } });
+
+    await node.execute.call(ctx);
+
+    expect(getFormData(ctx).ttl).toBe('0');
+  });
+
   it('collects multiple items into one deployment', async () => {
     const ctx = createDeployContext();
     ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }]);
