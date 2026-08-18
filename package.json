@@ -29,6 +29,7 @@
   "scripts": {
     "dev": "n8n-node dev",
     "build": "n8n-node build",
+    "prepack": "pnpm run build",
     "test": "vitest",
     "coverage": "vitest --run --coverage",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
@@ -38,7 +39,8 @@
     "prepare": "git config core.hooksPath scripts/githooks"
   },
   "files": [
-    "dist"
+    "dist/credentials",
+    "dist/nodes"
   ],
   "n8n": {
     "n8nNodesApiVersion": 1,
@@ -66,5 +68,9 @@
   "packageManager": "pnpm@10.12.4",
   "engines": {
     "node": ">=22.16"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
