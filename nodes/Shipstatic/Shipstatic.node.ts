@@ -978,6 +978,7 @@ export class Shipstatic implements INodeType {
             pairedItem: items.map((_, idx) => ({ item: idx })),
           });
         } else {
+          // eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- a RE-throw, not a raw one: `handleDeploy` only ever throws NodeApiError (via `apiError`) or NodeOperationError. Wrapping again would nest a typed error inside itself and lose the wire fields `errorItem` reads back.
           throw error;
         }
       }
@@ -1138,6 +1139,7 @@ export class Shipstatic implements INodeType {
         if (error instanceof NodeApiError || error instanceof NodeOperationError) {
           error.context = { ...error.context, itemIndex: i };
         }
+        // eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- a RE-throw of the error the line above just annotated with its itemIndex. Every throw reaching here came from `apiRequest`/`apiError` already typed; re-wrapping would discard the context that was just attached.
         throw error;
       }
     }

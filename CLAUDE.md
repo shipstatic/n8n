@@ -93,6 +93,63 @@ row fence (loud, live-proven — a wrong field name fails every deploy on its
 first try) and a credential-placeholder prefix fence (a prefix change is a
 deliberate platform-wide break, never drift).
 
+### The verification ruleset is a MOVING contract — pin it, but walk the pin
+
+`@n8n/node-cli` is exact-pinned (the artifact-tool law: it emits the published
+tarball). It also *carries* `@n8n/eslint-plugin-community-nodes`, which is the
+ruleset **n8n Cloud verification is judged against** — an external contract that
+changes without asking us. Pinning the tool therefore pins the contract, and a
+pin left alone stops being a fence and becomes a souvenir.
+
+**Measured 2026-08-18, and it is the sharpest instance of this the estate has.**
+The pin sat at `0.23.1` while `latest` was `0.44.2` — 21 versions — which held
+the verification plugin at `0.9.0` against a current `0.29.0`. **The ruleset had
+gone from 56 rules to 176.** `pnpm lint:n8n` was green the whole time, against a
+third of the contract it claimed to enforce. Bumping the pin turned up four
+ERRORS that would plausibly have failed a Cloud verification submission:
+
+- **`no-forbidden-lifecycle-scripts`** — `prepare` is banned outright in
+  community node packages ("these scripts execute arbitrary code during
+  installation"). The estate's git-hooks standard installs `core.hooksPath` via
+  exactly that script, so this repo cannot carry it. See below.
+- **`require-node-api-error` ×2** in `execute()` — both are RE-throws of errors
+  already typed by `apiError`, so they carry inline disables naming that reason;
+  re-wrapping would nest a typed error in itself and discard the `itemIndex`
+  just attached.
+- **`require-node-api-error`** in the suite — disabled for `tests/**` in
+  `eslint.config.mjs`: `NodeApiError` needs a live `INode` to construct, and a
+  fence reporting its own precondition is not node runtime behaviour.
+
+One warning survives deliberately: **`icon-prefer-themed-variants`** wants the
+`{ light, dark }` icon form. That is real work blocked on a dark brand SVG (a
+design asset), not a code change — recorded, not suppressed.
+
+**So: bump this pin on a schedule, not on a whim, and treat every new error it
+surfaces as a verification finding rather than lint noise.** Renovate's grouped
+devDep updates will offer it; do not auto-merge this one — read what the new
+rules say. The bump is also proven safe for the artifact: the tarball's file
+list is identical across `0.23.1` → `0.44.2`.
+
+### No `prepare` script — the one place the estate's hook standard cannot reach
+
+Root `CLAUDE.md`'s tooling standard installs the pre-commit hook with
+`"prepare": "git config core.hooksPath scripts/githooks"`. **This repo may not
+have it**: `prepare` is on the community-node ruleset's forbidden-lifecycle list
+(with `preinstall`, `install`, `postinstall`, `prepublish`, `preprepare`,
+`postprepare`), and that ruleset is the verification contract.
+
+`prepack` is NOT on that list, so the tarball law is unaffected.
+
+Enable the hook per clone, the same one-liner the super-repo root and
+`integrations/action` already use for their own reasons:
+
+```bash
+git config core.hooksPath scripts/githooks
+```
+
+An existing clone keeps working — `core.hooksPath` lives in `.git/config` and
+removing the script does not unset it.
+
 ### Two linters, and only one of them is a linter
 
 `pnpm lint` is Biome — the platform's one lint + format tool. `pnpm lint:n8n` is

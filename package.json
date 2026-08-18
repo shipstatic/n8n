@@ -35,8 +35,7 @@
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "lint": "biome check .",
     "lint:n8n": "eslint .",
-    "format": "biome format --write .",
-    "prepare": "git config core.hooksPath scripts/githooks"
+    "format": "biome format --write ."
   },
   "files": [
     "dist/credentials",
@@ -55,7 +54,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
     "@eslint/js": "^9.39.4",
-    "@n8n/node-cli": "0.23.1",
+    "@n8n/node-cli": "0.44.2",
     "@shipstatic/types": "2.10.0",
     "@vitest/coverage-v8": "4.1.10",
     "eslint": "^9.39.4",

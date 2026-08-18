@@ -40,6 +40,11 @@ export default [
     rules: {
       '@n8n/community-nodes/no-restricted-imports': 'off',
       '@n8n/community-nodes/no-restricted-globals': 'off',
+      // A fence that cannot fail is not a fence, and `NodeApiError` needs a
+      // live `INode` to construct — a suite has none. `throw new Error` is how
+      // a fence reports its own precondition (an unbuilt tree), which is not
+      // node runtime behaviour and never reaches a user's error panel.
+      '@n8n/community-nodes/require-node-api-error': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
     },
