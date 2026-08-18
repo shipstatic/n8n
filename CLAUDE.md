@@ -460,6 +460,32 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 
 No `<filter>`, `<clipPath>`, `<mask>`, `<style>`, or embedded CSS. n8n sanitizes SVGs and strips these.
 
+### Dependabot Reports ~58 Alerts And Zero Of Them Ship
+
+Measured 2026-08-18: 1 critical, 25 high, 28 moderate, 4 low on the default
+branch. **The correct response is to read the scope column, not the count.**
+
+- **Everything dev-scoped** — including the critical (`handlebars`, JS injection
+  via AST type confusion) — arrives through `@n8n/node-cli` →
+  `@n8n/ai-node-sdk` → `@n8n/ai-utilities` → langchain. That is the build
+  toolchain. It never reaches `dist/`, and `dist/` is the whole published
+  artifact.
+- **The three "runtime"-scoped alerts** (`lodash` ×2, `form-data`) come from
+  `n8n-workflow`, which is a **peerDependency**. Dependabot scores peers as
+  runtime. We do not ship it — the user's n8n instance provides it, at whatever
+  version that instance carries — so there is nothing to patch here. Pinning it
+  would mean this node dictating the host's own internals.
+
+The zero-dependency architecture is what makes the count irrelevant, and it is
+PROVEN rather than asserted: `dependencies: {}` on the registry, and
+`tests/contract.test.ts`'s artifact fence showing the built bytes require
+nothing but `n8n-workflow` and `node:crypto`.
+
+**So this number will never reach zero and must not be chased.** The one real
+maintenance action is keeping `@n8n/node-cli` current — exact-pinned by the
+artifact-tool law, so it moves as a deliberate bump, not a range resolution.
+Narrowing the `n8n-workflow` peer range would not change any of this.
+
 ### `n8n-node build` Sweeps the WHOLE Repo for `.png` / `.svg`
 
 `@n8n/node-cli`'s `copyStaticFiles` globs `**/*.{png,svg}` across the entire
