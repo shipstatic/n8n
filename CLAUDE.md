@@ -265,6 +265,21 @@ Both modes use n8n's `request` helper with the `formData` option — the same pr
 - `via` — always `"n8n"` (the `VIA` constant; fenced against `DeploymentVia.N8N`)
 - `labels` — optional JSON array
 - `password` — optional plaintext (6–128 chars); the API hashes it server-side
+- `ttl` — optional lifetime in SECONDS, stringified (a multipart body is all
+  strings; the API's `collectTtlFromFormData` does the `Number()`)
+
+**TTL's absence rule is the one place the Labels pattern does NOT apply, and
+the difference is worth stating because it looks like an inconsistency.**
+`labels` and `password` are gated on TRUTHINESS — an empty string there is
+absence of intent, a user who added the option and typed nothing. `ttl` is
+gated on KEY PRESENCE, so a `0` fed by an expression is forwarded and the
+server refuses it with its own sentence. A number has no empty string: `0` is
+a value someone typed, and swallowing it would make this node a second
+validator of a range `TTL_CONSTRAINTS` owns — and would show the user a
+deployment that never expires after they asked for one that expires
+immediately. The field's `default: 3600` exists for the same reason: adding a
+collection option puts its key in at the default, so a number field's default
+is what an unedited "Add Option" click sends.
 
 **No server-processing flags.** `/deployments` is a pure file pipe — n8n never sets `spa`, `build`, or `prerender`. Those flags are reserved for first-party UI (`web/my`, `web/www`) routing through `/upload`. See `cloudflare/api/CLAUDE.md` "Endpoint Purity". For SPA routing, users include `ship.json` in their input files; the deployment serves it as-is.
 
