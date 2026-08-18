@@ -53,6 +53,7 @@ const README = read('README.md');
 const PKG = JSON.parse(read('package.json')) as {
   dependencies: Record<string, string>;
   files: string[];
+  main: string;
   n8n: { nodes: string[]; credentials: string[] };
 };
 
@@ -321,8 +322,32 @@ describe('zero runtime dependencies', () => {
     expect(PKG.dependencies).toEqual({});
   });
 
-  it('ships nothing but dist/', () => {
-    expect(PKG.files).toEqual(['dist']);
+  it('ships the two artifact trees, not whatever the build left in dist/', () => {
+    // This said `['dist']` until 2026-08-19, and it was a value where an
+    // invariant belonged. `@n8n/node-cli`'s `copyStaticFiles` globs
+    // `**/*.{png,svg}` across the WHOLE REPO — ignoring only `dist` and
+    // `node_modules` — and copies every match into `dist/`. So `pnpm coverage`
+    // before a pack put `dist/coverage/favicon.png` and
+    // `dist/coverage/sort-arrow-sprite.png` into the tarball, and the published
+    // bytes depended on which untracked directories happened to exist at build
+    // time. Measured by packing after a coverage run; `prepack` (added the same
+    // day) makes local packing a sanctioned path, so the nondeterminism stopped
+    // being theoretical.
+    //
+    // The fix is to enumerate the artifact rather than sweep a directory: a
+    // stray asset can now land in `dist/` and still not ship.
+    expect(PKG.files).toEqual(['dist/credentials', 'dist/nodes']);
+
+    // …and the half that keeps the narrowing honest: every path the manifest
+    // declares as an entry point must live inside a shipped tree. Narrowing
+    // `files` without this could publish a package whose own `n8n` block points
+    // at files it does not contain — installable, and broken at load.
+    for (const entry of [PKG.main, ...PKG.n8n.nodes, ...PKG.n8n.credentials]) {
+      expect(
+        PKG.files.some((tree) => entry.startsWith(`${tree}/`)),
+        `${entry} is declared by the manifest but is not inside any \`files\` entry`,
+      ).toBe(true);
+    }
   });
 
   it('the BUILT artifact is current — a stale one would certify the wrong bytes', () => {

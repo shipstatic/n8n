@@ -100,6 +100,41 @@ eslint carrying the community-nodes plugin above: the ruleset **n8n Cloud
 verification is judged against**, a contract with an external party that happens
 to ship as a plugin. Both run in CI. Formatting is Biome's alone.
 
+### Release — the npm publish law, untranslated
+
+**A branch push publishes. There is no tag ritual.** `development` → the `beta`
+dist-tag, `main` → `latest`, exactly like `@shipstatic/ship`: the version picks
+the channel (a `-` suffix → `beta`), the branch grants the right to use it, and
+`npm-latest`'s `main`-only deployment branch policy is what refuses a stable
+publish off an integration branch — GitHub declines the job before a step runs.
+`.github/workflows/ci.yml` is the flagship's file byte-for-byte in the
+`version` / `publish` / `release` / `notify` jobs; only `test` is this repo's.
+
+**This repo was tag-driven until 2026-08-19, and the reason it no longer is
+belongs here, because it is the kind of thing that gets re-proposed.** Releases
+fired on `v*` from a second file (`npm-publish.yml`), which meant the law had to
+be re-expressed clause by clause wherever the trigger broke it: a
+`tag == "v" + package.json.version` assertion standing in for the branch, a
+hand-rolled `merge-base` ancestry check standing in for the environment policy,
+and a bespoke arm on `scripts/check-publish-law.sh` standing in for membership
+of the fence. **None of it was ever owed.** `integrations/vscode` is tag-driven
+because the Marketplace forbids semver prereleases; `integrations/action` is
+tag-driven because the release IS the tag and there is no registry. This package
+publishes to npm with dist-tags — nothing about its destination refuses the
+native form, so the translation was cost with no matching property. It was
+inherited from the neighbouring directories, not derived.
+
+Converged at the only free moment: **zero tags had ever been pushed, zero
+environments existed, and the pipeline had never once fired.** There was no
+ritual to break and no consumer expectation to honour. The general rule, now in
+root `CLAUDE.md`: a translation is a debt — before writing one, check whether
+the repo actually owes it.
+
+Consequences worth knowing: the trusted-publisher registration names **`ci.yml`**
+(the filename is half the registration); `--access` / `--provenance` live in this
+package's own `publishConfig`, never on the command; and `prepack` builds, so a
+tarball cannot carry a stale `dist` however it is produced.
+
 ### The environment dimension lives in the harness
 
 Every other platform surface derives its API URL from an environment variable.
@@ -424,6 +459,32 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 ### SVG Icon Requirements
 
 No `<filter>`, `<clipPath>`, `<mask>`, `<style>`, or embedded CSS. n8n sanitizes SVGs and strips these.
+
+### `n8n-node build` Sweeps the WHOLE Repo for `.png` / `.svg`
+
+`@n8n/node-cli`'s `copyStaticFiles` globs `**/*.{png,svg}` across the entire
+repository — ignoring only `dist` and `node_modules` — and copies every match
+into `dist/`. It is how the node and credential icons get built, and it does not
+distinguish them from anything else.
+
+So `pnpm coverage` (which writes `coverage/favicon.png` and
+`coverage/sort-arrow-sprite.png`) followed by a pack put those two files in the
+published tarball. **The tarball's contents depended on which untracked
+directories happened to exist at build time** — measured 2026-08-19, and made to
+matter by `prepack`, which turns a local `npm pack` into a sanctioned path.
+
+The fix is in the manifest, not the build: `files` enumerates the artifact
+(`dist/credentials`, `dist/nodes`) instead of sweeping `dist`. A stray asset can
+still land in `dist/` and now cannot ship — and `dist/package.json` and
+`dist/tsconfig.tsbuildinfo` stopped shipping with it. `tests/contract.test.ts`
+holds both halves: the exact `files` value, and that every path the manifest
+declares as an entry point (`main`, the `n8n` block) lives inside a shipped
+tree — because narrowing `files` without that second check could publish a
+package whose own `n8n` block points at files it does not contain.
+
+The old assertion was `expect(PKG.files).toEqual(['dist'])` under the name
+"ships nothing but dist/". It stated a value where an invariant belonged, and
+the value it stated was the one that let the sweep through.
 
 ### `~/.n8n/custom/` Needs a `package.json`
 

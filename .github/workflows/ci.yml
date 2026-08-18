@@ -1,13 +1,35 @@
-# Tests-only by doctrine: releases here are TAG-driven (`npm-publish.yml`), so
-# there is no environment dimension to flip and this file is identical on both
-# branches. Pushing `development` publishes nothing.
-#
-# It exists because until 1.0.0 the publish workflow was the only automated
-# gate on this repo — a broken commit on `development` was discovered at
-# release time, which is the worst moment to discover one. The same gap the
-# vscode repo closed, for the same reason. The pre-commit hook is a fast gate
-# (credential scan, lint, typecheck); suites live in CI, never in hooks.
 name: CI
+
+# This filename is load-bearing: npm's trusted-publisher registration for this
+# package names the repo AND this workflow file. Renaming ci.yml breaks
+# publishing silently.
+#
+# THIS REPO STOPPED BEING A TRANSLATION. Until 2026-08-19 releases here fired on
+# `v*` TAGS from a second file (`npm-publish.yml`), and the npm publish law had
+# to be re-expressed clause by clause to fit that trigger: a tag↔manifest
+# assertion standing in for the branch, an ancestry check standing in for the
+# `main`-only environment policy, and a bespoke arm on
+# `scripts/check-publish-law.sh` standing in for the fence itself.
+#
+# None of that was ever required. `integrations/vscode` is tag-driven because
+# the Marketplace forbids semver prereleases; `integrations/action` is
+# tag-driven because the release IS the tag and there is no registry at all.
+# This package publishes to npm with dist-tags — exactly like `@shipstatic/ship`
+# — so the law's NATIVE form applies and the translation was cost with no
+# corresponding property. The file is now the flagship's, byte-for-byte in the
+# `version` / `publish` / `release` / `notify` jobs, with only the `test` job
+# carrying this repo's own gates.
+#
+# Changed at the one moment it was free: zero tags had ever been pushed, zero
+# environments existed, and the pipeline had never fired once. There was no
+# ritual to break and no consumer expectation to honour.
+#
+# What that bought, concretely: `npm-latest` carries a `main`-only deployment
+# branch policy, so GitHub refuses a stable publish off `main` before a step
+# runs — no hand-rolled `merge-base` gate to maintain; the `version` job is
+# byte-identical to `npm/types`', which is what the fence actually compares; and
+# this repo is now a full member of `check-publish-law.sh`'s REPOS list rather
+# than prose promising it behaves like one.
 
 on:
   push:
@@ -20,8 +42,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
     steps:
       - uses: actions/checkout@v7
 
@@ -53,13 +73,181 @@ jobs:
       # zero-dependency claim over what actually ships.
       - run: pnpm build
 
+      # Coverage in place of a bare test run: the same suite, plus the ratchet
+      # in vitest.config.ts.
       - run: pnpm coverage
 
-      # Activates once the SLACK_WEBHOOK_URL secret is set on this repo.
-      - if: failure() && env.SLACK_WEBHOOK_URL != ''
+  # The publish decision is its own job because `publish`'s `environment:` is
+  # evaluated before any step runs — it can only read another job's outputs.
+  version:
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      publish: ${{ steps.decide.outputs.publish }}
+      version: ${{ steps.decide.outputs.version }}
+      tag: ${{ steps.decide.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: decide
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+
+          # The VERSION decides the channel: a prerelease (any `-` suffix) goes to
+          # `beta`, so `latest` keeps resolving the last stable release.
+          if [[ "$VERSION" == *-* ]]; then TAG=beta; else TAG=latest; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          # Idempotence FIRST, because "already released" is true regardless of
+          # which branch is asking — and it is the more informative answer. Order
+          # matters: with the branch check first, every push to an integration
+          # branch after a release told the operator to "merge to main to release
+          # it" for a version already on the registry, and kept saying so until
+          # the next version bump. Once the version is published, any push is a
+          # no-op and says exactly that.
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "::notice title=Already released::$NAME@$VERSION is on the registry — nothing to publish. Bump the version to release again."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # The BRANCH decides whether that channel may be published from here.
+          # `latest` is main-only. A stable version on an integration branch is a
+          # STAGED release, and staging one before merging is the normal flow — so
+          # this skips rather than fails, exactly like the idempotence check above.
+          if [[ "$TAG" == "latest" && "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "::notice title=Release staged::$NAME@$VERSION is a stable version. latest publishes only from main, so nothing was published from $GITHUB_REF_NAME. Merge to main to release it."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # `npm-latest` carries a main-only deployment branch policy, so publishing
+    # `latest` off `main` is refused by GitHub before a step runs.
+    environment: npm-${{ needs.version.outputs.tag }}
+    # One job, one credential. `id-token` is job-scoped — any step in this job
+    # could mint an OIDC token that npm would exchange for a publish credential
+    # — so this job holds the OIDC grant and nothing else, and runs first-party
+    # steps only. The tag lives in `release`, notification in `notify`, each
+    # with its own lesser permission.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Nothing after checkout touches git, so no credential needs to sit
+          # in .git/config for the lifetime of the OIDC-privileged job.
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      # No `registry-url`: it would write an `_authToken` line into .npmrc, and
+      # npm reads that line — even with no token — as "token auth is configured"
+      # and skips the OIDC handshake (actions/setup-node#1551).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # OIDC needs npm >= 11.5.1; node 22 bundles 10.x, and pnpm has no OIDC
+      # support — hence `npm`, not `pnpm`, for the publish. Exact-pinned like
+      # every tool that emits a published artifact — this one assembles the
+      # tarball and mints the provenance attestation, and it is the only tool
+      # in the pipeline the lockfile cannot hold.
+      - run: npm install -g npm@12.0.2
+
+      # No build step here on purpose: `prepack` builds, so the tarball cannot
+      # contain a stale dist however it is produced — CI, or a local `npm pack`.
+      # `--access` and `--provenance` live in the package's own publishConfig
+      # for the same reason: the publish contract belongs to the package, not to
+      # the one caller that happens to be CI today. The tag is the exception —
+      # it is a property of THIS release, not of the package.
+      #
+      # Trusted publishing: no NODE_AUTH_TOKEN anywhere in this job — npm
+      # authenticates with a token whenever one is present and attempts OIDC
+      # only in its absence.
+      - run: npm publish --tag "${{ needs.version.outputs.tag }}"
+
+  # The registry is the source of truth for "released", so the tag follows the
+  # publish rather than preceding it: a failed publish leaves no tag claiming a
+  # release that does not exist. Its own job, its own credential: it can tag,
+  # and nothing else. No checkout — `gh` talks to the API directly, so no repo
+  # credential exists in this job at all.
+  #
+  # If this job fails after a successful publish, the repair is GitHub's
+  # "Re-run failed jobs": it re-runs exactly this job at the original SHA with
+  # `publish`'s success retained. A later push could not repair it — the tag
+  # must point at the commit that was published.
+  release:
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          # A prerelease is marked as one, so `latest` on GitHub means the same
+          # thing it means on npm. The notes are generated from the commits
+          # since the last release — which is why commit subjects are written
+          # to be read.
+          PRERELEASE=""
+          [[ "$VERSION" == *-* ]] && PRERELEASE="--prerelease"
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --generate-notes \
+            $PRERELEASE
+
+  # Notification is third-party code (the Slack action), so it runs where no
+  # credential exists: an empty permissions map, after both outcomes are known.
+  notify:
+    needs: [version, publish, release]
+    if: always() && needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - if: needs.publish.result == 'success' && needs.release.result == 'success'
         uses: slackapi/slack-github-action@v4
         with:
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
           payload: |
-            text: "🔴 n8n CI failed on ${{ github.ref_name }}"
+            text: "✅ n8n-nodes-shipstatic ${{ needs.version.outputs.version }} published (${{ needs.version.outputs.tag }})"
+
+      - if: needs.publish.result != 'success'
+        uses: slackapi/slack-github-action@v4
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "🔴 n8n-nodes-shipstatic publish failed"
+
+      # The honest middle state: the version IS on the registry but carries no
+      # tag. Before the job split this reported as "publish failed", which was
+      # false during exactly the window where the truth matters.
+      - if: needs.publish.result == 'success' && needs.release.result != 'success'
+        uses: slackapi/slack-github-action@v4
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "🟡 n8n-nodes-shipstatic ${{ needs.version.outputs.version }} published but UNTAGGED — the release job failed. Repair: Re-run failed jobs on this run."
