@@ -1201,14 +1201,45 @@ export class Shipstatic implements INodeType {
     // • Without one — public deployment with a claim URL and an expiry
     if (resource === 'deployment' && operation === 'deploy') {
       let token: string | undefined;
+      let credentialAttached = false;
       try {
         const credentials = await this.getCredentials('shipstaticApi');
-        // An empty field is absence of intent, not a credential to send:
-        // deploy anonymously rather than presenting a bare `Bearer `. Same
-        // normalization the SDK applies to an empty SHIP_TOKEN.
-        token = (credentials.token as string) || undefined;
+        credentialAttached = true;
+        token = (credentials.token as string)?.trim() || undefined;
       } catch {
-        // No credentials configured — deploy anonymously.
+        // No credential attached — the anonymous door, and the product.
+      }
+      // **Attaching a credential is intent; leaving its slot empty is a
+      // mistake.** `getCredentials` THROWS when no credential is attached and
+      // RESOLVES when one is — two different states, and collapsing them is
+      // what makes the 0.x upgrade fail silently. A credential created for the
+      // 0.x node stored its value under `apiKey`; 1.x reads `token`, so an
+      // upgraded workflow arrives here with a credential attached and an empty
+      // slot. Deploying that anonymously SUCCEEDS — and hands back a public
+      // deployment that expires in days where the user expected a permanent one
+      // under their account. A wrong success is the worst failure this node
+      // has, so it is refused.
+      //
+      // The anonymous door is untouched: no credential attached is still no
+      // credential, and still deploys. Only the contradiction is refused.
+      //
+      // This is also the ONLY guard available for the 0.x migration. The other
+      // one — reading a stored-but-undeclared `binaryData` to catch a 0.x
+      // text-mode workflow — is impossible by construction: `getNodeParameters`
+      // (`n8n-workflow/dist/esm/node-helpers.js`) iterates the DECLARED
+      // property array, so a stored key with no declaration is never visited.
+      // Measured 2026-08-19 at n8n-workflow 2.12.0. That break stays loud by
+      // accident rather than by design (the missing binary field errors), and
+      // its real mitigation is the README's upgrade section.
+      if (credentialAttached && !token) {
+        throw new NodeOperationError(
+          this.getNode(),
+          'ShipStatic credential is attached but its Token field is empty',
+          {
+            description:
+              'Open the credential and paste an API key (ship-…) or a deploy token (deploy-…). Upgrading from the 0.x node? It stored the value in an "API Key" field that 1.x no longer reads — re-enter it in Token. To deploy anonymously instead, remove the credential from this node.',
+          },
+        );
       }
 
       try {

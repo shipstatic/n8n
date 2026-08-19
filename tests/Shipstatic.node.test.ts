@@ -281,11 +281,40 @@ describe('Deploy — authentication', () => {
     expect(call[0].headers.Authorization).toBeUndefined();
   });
 
-  it('an empty credential field deploys anonymously rather than sending a bare Bearer', async () => {
-    // A saved-but-blank credential is absence of intent, not a credential.
-    // `Bearer ` would be a 401 the user cannot diagnose. Same normalization
-    // the SDK applies to an empty SHIP_TOKEN.
+  it('an attached credential with an empty Token is refused, not silently downgraded', async () => {
+    // CHANGED 2026-08-19, and the reason is the 0.x upgrade. Until now a
+    // saved-but-blank credential was read as absence of intent and deployed
+    // anonymously. But `getCredentials` throws when NO credential is attached
+    // and resolves when one is, so those are two states — and a credential
+    // created for the 0.x node stored its value under `apiKey`, which 1.x does
+    // not read. Every upgraded workflow therefore arrives with a credential
+    // attached and an empty slot.
+    //
+    // Deploying that anonymously SUCCEEDS, and hands back a public deployment
+    // that expires in days where the user expected a permanent one under their
+    // account. A wrong success is worse than any error, so it is refused.
     const ctx = createDeployContext({}, { token: '' });
+
+    await expect(node.execute.call(ctx)).rejects.toMatchObject({
+      name: 'NodeOperationError',
+      message: expect.stringMatching(/Token field is empty/i),
+    });
+    expect(findDeployCall(ctx)).toBeUndefined();
+  });
+
+  it('whitespace in the Token slot is emptiness, not a credential', async () => {
+    const ctx = createDeployContext({}, { token: '   ' });
+
+    await expect(node.execute.call(ctx)).rejects.toMatchObject({
+      name: 'NodeOperationError',
+      message: expect.stringMatching(/Token field is empty/i),
+    });
+  });
+
+  it('NO credential attached still deploys anonymously — the door is untouched', async () => {
+    // The refusal above must not narrow the anonymous door, which is the
+    // product. No credential attached is still no credential.
+    const ctx = createDeployContext({}, null);
 
     await node.execute.call(ctx);
 
