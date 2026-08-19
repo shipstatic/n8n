@@ -124,11 +124,33 @@ One warning survives deliberately: **`icon-prefer-themed-variants`** wants the
 `{ light, dark }` icon form. That is real work blocked on a dark brand SVG (a
 design asset), not a code change — recorded, not suppressed.
 
-**So: bump this pin on a schedule, not on a whim, and treat every new error it
-surfaces as a verification finding rather than lint noise.** Renovate's grouped
-devDep updates will offer it; do not auto-merge this one — read what the new
-rules say. The bump is also proven safe for the artifact: the tarball's file
-list is identical across `0.23.1` → `0.44.2`.
+**Treat every new error it surfaces as a verification finding, not lint noise.**
+The bump is proven safe for the artifact: the tarball's file list is identical
+across `0.23.1` → `0.44.2`.
+
+**Two MECHANISMS hold that, because the sentence version of it did not.** This
+paragraph originally read "do not auto-merge this one — read what the new rules
+say", which is a promise with nothing enforcing it: `renovate.json` extends the
+org preset, and the preset auto-merges devDep updates behind the CI gate. That
+is the No-Fourth-Category defect written into the very section arguing against
+it. Both halves are now real:
+
+- **`renovate.json` carries a `packageRules` entry** setting
+  `automerge: false` for `@n8n/node-cli`, with both reasons stated in the rule
+  itself — it emits the published tarball, and it carries an external contract.
+  A bump now waits for a human.
+- **`pnpm lint:n8n` runs `--max-warnings 0`**, which is the half that actually
+  closes the hole. Auto-merge or not, a new ERROR always went red and blocked;
+  a new WARNING passed silently — and `icon-prefer-themed-variants` is the
+  proof it can matter, since it is a real finding the old gate would have
+  waved through. Every rule the ruleset gains is now blocking, whatever
+  severity n8n ships it at.
+
+The single live warning is suppressed **inline at the icon**, with its reason
+and its expiry, rather than switched off in `eslint.config.mjs` — an
+exception you can see from the code it concerns, which disappears when T3
+lands the asset. That placement is the point: a config-level `off` would have
+hidden the very finding that justified making warnings blocking.
 
 ### No `prepare` script — the one place the estate's hook standard cannot reach
 

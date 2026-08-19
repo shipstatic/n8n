@@ -1,4 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>shipstatic/renovate-config"]
+  "extends": ["github>shipstatic/renovate-config"],
+  "packageRules": [
+    {
+      "description": "@n8n/node-cli lands by hand. Two independent reasons, either one sufficient. (1) It EMITS the published tarball, and the artifact-tool law exact-pins every such tool because two installs on different days must not build different bytes — a tool that assembles the artifact should not land unattended. (2) It CARRIES @n8n/eslint-plugin-community-nodes, which is the ruleset n8n Cloud verification is judged against — an external contract that changes without asking us. A bump is a contract change to read, not a dependency to absorb. Found the expensive way: the pin sat 21 versions back, freezing that ruleset at 56 of its current 176 rules while `pnpm lint:n8n` stayed green.",
+      "matchPackageNames": ["@n8n/node-cli"],
+      "automerge": false,
+      "labels": ["verification-contract"]
+    }
+  ]
 }
