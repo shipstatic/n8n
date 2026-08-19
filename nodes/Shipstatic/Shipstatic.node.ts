@@ -503,6 +503,7 @@ export class Shipstatic implements INodeType {
   description: INodeTypeDescription = {
     displayName: 'ShipStatic',
     name: 'shipstatic',
+    // eslint-disable-next-line @n8n/community-nodes/icon-prefer-themed-variants -- KNOWN and wanted: the ruleset asks for the `{ light, dark }` form and the n8n-workflow typing already allows it. What is missing is a dark-variant brand SVG, which is a design asset rather than a code change (T3). Suppressed HERE, at the one line it concerns, rather than switched off in `eslint.config.mjs`, so it stays visible to anyone reading the node and disappears the moment the asset lands. EXPIRY: delete this line when the dark icon is wired.
     icon: 'file:shipstatic.svg',
     group: ['output'],
     version: 1,

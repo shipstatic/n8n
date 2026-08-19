@@ -34,7 +34,7 @@
     "coverage": "vitest --run --coverage",
     "typecheck": "tsc -p tsconfig.check.json --noEmit",
     "lint": "biome check .",
-    "lint:n8n": "eslint .",
+    "lint:n8n": "eslint . --max-warnings 0",
     "format": "biome format --write ."
   },
   "files": [
