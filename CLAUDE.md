@@ -809,6 +809,47 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 
 ## Known Gotchas
 
+### The real-n8n sitting — what it proved, 2026-08-19
+
+Walked against **n8n 2.35.4** with the PUBLISHED `1.0.0-beta.4` installed into
+an isolated `N8N_USER_FOLDER` (not `~/.n8n` — an operator database lives there),
+dev-seamed by patching the one constant in the installed
+`dist/nodes/Shipstatic/api.js`, the same seam `live.test.ts` substitutes. No
+production key, no production deploy.
+
+Proven, in a real host rather than against a mock of one:
+
+- **The node loads** and reports `usableAsTool: true`, `version: 1`.
+- **T9's converged vocabulary is what the host actually serves**:
+  `upload ("Deploy")`, `whoami ("Whoami")`, the nine domain verbs, three input
+  modes with `binary` as default, and the `files` field present. This is the
+  same payload an AI Agent's tool schema is built from, so it doubles as T0b's
+  confirmation.
+- **A keyless deploy really works end to end.** Text mode, no credential →
+  live URL, claim URL, `via: "n8n"`, an expiry — and the site serves.
+- **Files mode works through the host, and base64 survives it BYTE-FOR-BYTE.**
+  A two-file site (HTML + a base64 GIF) deployed, and the GIF fetched back
+  equals the original bytes. **This is the one claim the mocked suite
+  structurally cannot make**: that n8n's real `request` helper produces working
+  multipart. That was "measured across v0.5–0.6" and had never been re-verified
+  on n8n 2.x until now.
+
+Two host facts worth keeping:
+
+- **n8n injects `__CUSTOM_API_CALL__`** into the resource and operation lists of
+  any credentialed node — 322 of the 981 node types in that install. It is not
+  ours, it does not appear in our `options` arrays, and the catalogue fence is
+  right to ignore it. Do not "fix" it.
+- **`pnpm dlx n8n` cannot boot**: the SQLite driver is a native binding pnpm's
+  dlx store does not build, and n8n dies at DB init. Use `npx n8n@latest start`.
+
+**Honest remainder — NOT walked**, each needing a credential the sitting did
+not configure: the credential create + connection test in the UI, resource
+locators populating and paginating, binary mode from an upstream node, the icon
+render, and a live AI Agent run (needs an LLM credential). The agent SCHEMA leg
+is covered by the node-types payload above; only the live agent execution is
+outstanding.
+
 ### `pnpm dev` Does Not Render `file:` Icons
 
 `n8n-node dev` creates a symlink that n8n's icon serving doesn't resolve. The icon always shows as the generic fallback in dev mode. **Works correctly when installed from npm.**
