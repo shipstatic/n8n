@@ -273,13 +273,25 @@ describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
     expect(item.json.files).toBe(2);
 
     const base = `https://${item.json.deployment}`;
+
+    // **HTML is NOT served byte-identical, by design.** The router rewrites
+    // asset URLs with an immutable-cache buster — `pixel.gif` comes back as
+    // `pixel.gif?_ship=…` — which is a platform feature, not damage. This
+    // assertion asserted byte equality on the first run and failed on exactly
+    // that, which is the live tier earning its place: no mock of n8n's helpers
+    // can show what the ROUTER does to a file after it is stored.
     const servedHtml = await fetch(`${base}/index.html`);
     expect(servedHtml.status).toBe(200);
-    expect(await servedHtml.text()).toBe(html);
+    const servedText = await servedHtml.text();
+    expect(servedText).toContain('<h1>files mode</h1>');
+    expect(servedText).toMatch(/src="pixel\.gif(\?_ship=[a-z0-9]+)?"/);
 
+    // The binary is where byte equality belongs — nothing rewrites it, so this
+    // is the end-to-end proof of the whole files-mode path: strict base64
+    // decode → multipart → storage → serving. Equality rather than length,
+    // because a mangled decode can preserve the size.
     const servedGif = await fetch(`${base}/pixel.gif`);
     expect(servedGif.status).toBe(200);
-    // Byte equality, not length: a mangled decode can preserve the size.
     expect(Buffer.from(await servedGif.arrayBuffer()).equals(gifBytes)).toBe(true);
   });
 
