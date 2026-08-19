@@ -117,16 +117,30 @@ describe('restated platform facts', () => {
     // perfectly and simply tells a user to paste a credential the platform
     // classifies as OPAQUE and refuses. `token-` was the deploy prefix until
     // 2.0 and still appears in older docs, so this is drift with a precedent.
-    const node = readFileSync(join(ROOT, 'nodes/Shipstatic/Shipstatic.node.ts'), 'utf8');
     const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
     const credential = new ShipstaticApi();
     const slot = credential.properties[0];
 
     expect(String(slot.placeholder)).toContain(API_KEY.PREFIX);
-    expect(String(slot.placeholder)).toContain(DEPLOY_TOKEN.PREFIX);
-    expect(String(slot.description)).toContain(DEPLOY_TOKEN.PREFIX);
-    expect(node).toContain(DEPLOY_TOKEN.PREFIX);
-    expect(readme).toMatch(new RegExp(`${API_KEY.PREFIX}|${DEPLOY_TOKEN.PREFIX}`));
+    expect(readme).toContain(API_KEY.PREFIX);
+
+    // ─── ONE population is ADVERTISED (operator decision, 2026-08-19) ───
+    //
+    // These assertions were the inverse until today: they PINNED the
+    // two-population copy. Inverting rather than deleting them is the point —
+    // the capability is unchanged (the slot accepts either, the server
+    // classifies, `tests/live.test.ts` still proves a deploy token deploys),
+    // but no PROACTIVE surface promotes one. Re-promotion is now a deliberate
+    // fence edit instead of prose drifting back.
+    //
+    // `deploy-` is checked against the BUILT artifact, not the source: comments
+    // explaining the decision legitimately name the prefix, and `tsc` strips
+    // them, so the built file is exactly the set of strings a user can read.
+    const shipped = read('dist/nodes/Shipstatic/Shipstatic.node.js');
+    expect(String(slot.placeholder)).not.toContain(DEPLOY_TOKEN.PREFIX);
+    expect(String(slot.description)).not.toContain(DEPLOY_TOKEN.PREFIX);
+    expect(shipped).not.toContain(DEPLOY_TOKEN.PREFIX);
+    expect(readme).not.toContain(DEPLOY_TOKEN.PREFIX);
   });
 
   it('the failure item can carry every wire error', () => {
