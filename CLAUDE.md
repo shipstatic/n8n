@@ -320,7 +320,7 @@ don't build it.
 
 | #   | Resource   | Operation | HTTP Call                                              |
 | --- | ---------- | --------- | ------------------------------------------------------ |
-| 1   | Deployment | Deploy    | `POST /deployments` multipart FormData (optional auth) |
+| 1   | Deployment | Deploy (`upload`) | `POST /deployments` multipart FormData (optional auth) |
 | 2   | Deployment | Get       | `GET /deployments/{id}`                                |
 | 3   | Deployment | List      | `GET /deployments` → fan out `.deployments`            |
 | 4   | Deployment | Delete    | `DELETE /deployments/{id}` → `{deployment, status: 'deleting'}` (202) |
@@ -334,7 +334,56 @@ don't build it.
 | 12  | Domain     | Share     | `GET /domains/{name}/share`                            |
 | 13  | Domain     | Validate  | `POST /domains/validate` body `{domain: name}`         |
 | 14  | Domain     | Verify    | `POST /domains/{name}/verify`                          |
-| 15  | Account    | Get       | `GET /account`                                         |
+| 15  | Account    | Whoami (`whoami`) | `GET /account`                                 |
+
+### Naming: the decision rule, stated once
+
+**The platform's idioms come first; the host is accommodated after.** Three
+clauses, and every naming question here is a lookup against them rather than a
+fresh debate:
+
+1. **Operation VALUES follow the platform's resource verbs, always.** They are
+   the stored contract in a saved workflow *and* the tool grammar an agent
+   reads (`usableAsTool` surfaces values, not labels), so they are the half
+   that must not diverge.
+2. **DISPLAY labels go to whichever word wins on host enforcement or audience
+   clarity.** "Deploy" because it is the platform's own title for the act
+   (`UPLOAD_TOOL_TITLE` is "Deploy Static Site"); "List" because it is the
+   platform's verb and the community ruleset carries no get-many rule
+   (measured at plugin 0.29.0 — adopt "Get Many" as display-only if n8n ever
+   enforces it).
+3. **Host-owned mechanism words stay the host's** — `returnAll`, `limit`,
+   `input`, `binaryPropertyName`. Where n8n enforces a word (its lint pins
+   `returnAll`'s description sentence verbatim), the host has already won.
+
+**Converged 2026-08-19 under this rule**, while it was still free — 1.x existed
+only on `beta`, and 0.x workflows must re-pick operations anyway:
+
+- `deployment.deploy` → **`deployment.upload`**, label "Deploy" unchanged.
+  `upload` is the verb on every surface that speaks resource grammar
+  (`ship.deployments.upload()`, `ship deployments upload`,
+  `deployments_upload`); "Deploy" is the platform's human word for the same
+  act. Each word now holds its own role, and the agent grammar matches the MCP
+  suffix exactly.
+- `account.get` → **`account.whoami`**, label "Whoami" too. `ship whoami`,
+  `ship.whoami()`, the `whoami` MCP tool — and unlike Deploy there is no
+  platform TITLE pulling the other way, so the display follows the verb.
+
+**After 1.0.0 this same change would be a `typeVersion`-grade break.** That is
+the whole reason it happened now.
+
+**Audited and KEPT — recorded so the sweep is not re-run from scratch:**
+resource values (`deployment`/`domain`/`account` — the constitution's entity
+names); all nine domain verbs and the deployment CRUD verbs (byte-identical to
+MCP suffixes and SDK methods); `labels`/`password`/`ttl`/`idempotencyKey`/
+`token`; the files grammar (`jsonUploadSchema` verbatim); `errorType` beside
+n8n's owned `error` key; the credential type id `shipstaticApi`.
+
+**`spaDetect` is a positive match, not an oversight** — it is the SDK's own
+option name (`ship`'s `src/shared/types.ts`, and the CLI flag). **Never
+"align" it to `spa`**: `spa` is the reserved first-party server-processing
+flag the purity law forbids this node to send. The current name is
+load-bearing.
 
 ### Deploy — Three Input Modes
 

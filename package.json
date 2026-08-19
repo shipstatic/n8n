@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-shipstatic",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.4",
   "description": "Deploy static sites and HTML pages to a live URL — free, no account needed",
   "keywords": [
     "n8n-community-node-package",

@@ -67,9 +67,9 @@ const node = new Shipstatic();
  * that reaches a user's saved workflow as a value that no longer resolves.
  */
 const CATALOGUE: Record<string, string[]> = {
-  deployment: ['delete', 'deploy', 'get', 'list', 'set'],
+  deployment: ['delete', 'get', 'list', 'set', 'upload'],
   domain: ['delete', 'dns', 'get', 'list', 'records', 'set', 'share', 'validate', 'verify'],
-  account: ['get'],
+  account: ['whoami'],
 };
 
 function operationOptions(resource: string): INodePropertyOptions[] {
@@ -249,7 +249,7 @@ describe('operation catalogue', () => {
     // `usableAsTool: true` makes these descriptions the tool catalogue an LLM
     // reads, and the claim URL is the ONLY way a keyless deployment is ever
     // kept. The destructive hints were fenced; this promise was not.
-    const deploy = operationOptions('deployment').find((o) => o.value === 'deploy');
+    const deploy = operationOptions('deployment').find((o) => o.value === 'upload');
     expect(deploy?.description).toMatch(/claim URL/i);
     expect(deploy?.description).toMatch(/show both to the user/i);
   });
@@ -359,7 +359,14 @@ describe('operation catalogue', () => {
     expect(README).toContain('## Upgrading from 0.x');
     for (const clause of [
       'Re-enter your credential',
-      'Re-pick the operation',
+      // Collapsed into ONE break by T9: the operation identifiers ARE the
+      // platform's verbs now, so the three renames are one statement rather
+      // than three. The mappings are pinned individually because each is a
+      // stored value a 0.x workflow carries.
+      'Re-pick your operations',
+      '`remove` →\n   `delete`',
+      '`upload`',
+      '`whoami`',
       'Re-select your Deploy input mode',
       'Keyless deploys changed',
     ]) {

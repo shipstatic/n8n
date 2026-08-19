@@ -118,7 +118,7 @@ function liveContext(params: Record<string, any>, token?: string) {
 
 const deployParams = (overrides: Record<string, any> = {}) => ({
   resource: 'deployment',
-  operation: 'deploy',
+  operation: 'upload',
   input: 'binary',
   binaryPropertyName: 'data',
   options: {},
@@ -204,7 +204,7 @@ describe.skipIf(!API_URL || !TOKEN)('live — authenticated', () => {
   });
 
   it('reads the account', async () => {
-    const [item] = await run({ resource: 'account', operation: 'get' }, TOKEN);
+    const [item] = await run({ resource: 'account', operation: 'whoami' }, TOKEN);
     expect(item.json.email).toBeTruthy();
     expect(item.json.plan).toBeTruthy();
   });
