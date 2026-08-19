@@ -164,9 +164,9 @@ completes.
 
 ### Account
 
-| Operation | Description                                               |
-| --------- | --------------------------------------------------------- |
-| **Get**   | Get your account details including email, plan, and usage |
+| Operation   | Description                                               |
+| ----------- | --------------------------------------------------------- |
+| **Whoami**  | Get your account details including email, plan, and usage |
 
 ## Example Workflows
 
@@ -228,8 +228,11 @@ changes four things in saved workflows:
    stored its value in an "API Key" field that 1.x does not read — the node
    refuses to deploy rather than silently falling back to an anonymous public
    deployment, so you will see a clear error until you re-enter it.
-2. **Re-pick the operation where you used Remove.** `remove` became `delete`,
-   matching the rest of the platform.
+2. **Re-pick your operations.** Operation identifiers are now the platform's
+   own verbs, so the stored ones from 0.x no longer resolve: `remove` →
+   `delete`, Deploy's identifier → `upload` (the label is still "Deploy"), and
+   Account's → `whoami`. A workflow carrying a retired identifier fails loudly
+   rather than doing something unexpected.
 3. **Re-select your Deploy input mode.** The Binary File toggle became the
    **Input** selector (Binary Files / Text Content / Files (JSON)). Workflows
    that used the toggle in its OFF position — text content — do not carry over

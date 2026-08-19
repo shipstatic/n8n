@@ -939,8 +939,15 @@ export class Shipstatic implements INodeType {
             action: 'Delete a deployment',
           },
           {
+            // VALUE is the platform's resource verb (`ship.deployments.upload()`,
+            // `ship deployments upload`, the MCP's `deployments_upload`); the
+            // LABEL is the platform's own title for the same act
+            // (`UPLOAD_TOOL_TITLE` = "Deploy Static Site", and the SDK ships
+            // `ship.deploy()` as the convenience alias). Each platform word in
+            // its platform role — and because `usableAsTool` surfaces VALUES to
+            // agents, the tool grammar now matches the MCP suffix exactly.
             name: 'Deploy',
-            value: 'deploy',
+            value: 'upload',
             description:
               'Publish files and get a live URL. Without credentials, the response includes a claim URL — show both to the user. To make the site private, set Password under Options.',
             action: 'Deploy a site',
@@ -966,7 +973,7 @@ export class Shipstatic implements INodeType {
             action: 'Set deployment labels',
           },
         ],
-        default: 'deploy',
+        default: 'upload',
       },
 
       {
@@ -1049,13 +1056,16 @@ export class Shipstatic implements INodeType {
         displayOptions: { show: { resource: ['account'] } },
         options: [
           {
-            name: 'Get',
-            value: 'get',
+            // `whoami` on every surface — `ship whoami`, `ship.whoami()`, the
+            // `whoami` MCP tool — and unlike Deploy there is no platform TITLE
+            // pulling the other way, so the display moves too.
+            name: 'Whoami',
+            value: 'whoami',
             description: 'Get your account details including email, plan, and usage',
             action: 'Get account info',
           },
         ],
-        default: 'get',
+        default: 'whoami',
       },
 
       // ─── Required Parameters ────────────────────────────────────────────
@@ -1072,7 +1082,7 @@ export class Shipstatic implements INodeType {
         type: 'options',
         default: 'binary',
         noDataExpression: true,
-        displayOptions: { show: { resource: ['deployment'], operation: ['deploy'] } },
+        displayOptions: { show: { resource: ['deployment'], operation: ['upload'] } },
         options: [
           {
             name: 'Binary Files',
@@ -1099,7 +1109,7 @@ export class Shipstatic implements INodeType {
         default: 'data',
         required: true,
         displayOptions: {
-          show: { resource: ['deployment'], operation: ['deploy'], input: ['binary'] },
+          show: { resource: ['deployment'], operation: ['upload'], input: ['binary'] },
         },
         hint: 'The name of the input binary field containing the file to be deployed',
       },
@@ -1111,7 +1121,7 @@ export class Shipstatic implements INodeType {
         required: true,
         typeOptions: { rows: 5 },
         displayOptions: {
-          show: { resource: ['deployment'], operation: ['deploy'], input: ['text'] },
+          show: { resource: ['deployment'], operation: ['upload'], input: ['text'] },
         },
         hint: 'The text content of the file to deploy',
       },
@@ -1122,7 +1132,7 @@ export class Shipstatic implements INodeType {
         default: 'index.html',
         required: true,
         displayOptions: {
-          show: { resource: ['deployment'], operation: ['deploy'], input: ['text'] },
+          show: { resource: ['deployment'], operation: ['upload'], input: ['text'] },
         },
         description: 'The path to deploy the content as (defaults to "index.html")',
       },
@@ -1134,7 +1144,7 @@ export class Shipstatic implements INodeType {
         required: true,
         typeOptions: { rows: 8 },
         displayOptions: {
-          show: { resource: ['deployment'], operation: ['deploy'], input: ['files'] },
+          show: { resource: ['deployment'], operation: ['upload'], input: ['files'] },
         },
         // Written to be read by an LLM: `usableAsTool` makes this the tool
         // catalogue's text for the one parameter an agent must construct.
@@ -1259,7 +1269,7 @@ export class Shipstatic implements INodeType {
         type: 'collection',
         placeholder: 'Add Option',
         default: {},
-        displayOptions: { show: { resource: ['deployment'], operation: ['deploy'] } },
+        displayOptions: { show: { resource: ['deployment'], operation: ['upload'] } },
         options: [
           {
             displayName: 'Idempotency Key',
@@ -1413,7 +1423,7 @@ export class Shipstatic implements INodeType {
     // Deploy has two modes:
     // • With a token — permanent deployment under your account
     // • Without one — public deployment with a claim URL and an expiry
-    if (resource === 'deployment' && operation === 'deploy') {
+    if (resource === 'deployment' && operation === 'upload') {
       let token: string | undefined;
       let credentialAttached = false;
       try {
@@ -1503,7 +1513,7 @@ export class Shipstatic implements INodeType {
     // Global ops (list, account.get) don't depend on per-item parameters —
     // run once and pair the output to all input items so n8n's data-trace stays
     // honest. Per-item ops (get, set, delete, etc.) loop over input items as usual.
-    const isGlobalOp = operation === 'list' || (resource === 'account' && operation === 'get');
+    const isGlobalOp = operation === 'list' || (resource === 'account' && operation === 'whoami');
     const iterations = isGlobalOp ? 1 : items.length;
     const globalPairedItem = items.map((_, idx) => ({ item: idx }));
 

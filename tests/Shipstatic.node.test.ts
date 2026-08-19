@@ -104,7 +104,7 @@ function createDeployContext(
   return createContext(
     {
       resource: 'deployment',
-      operation: 'deploy',
+      operation: 'upload',
       input: 'binary',
       binaryPropertyName: 'data',
       options: {},
@@ -1502,10 +1502,10 @@ describe('Global vs per-item iteration', () => {
     expect(results[0].pairedItem).toEqual([{ item: 0 }, { item: 1 }]);
   });
 
-  it('account get calls GET /account once and returns the body', async () => {
+  it('account whoami calls GET /account once and returns the body', async () => {
     const ctx = createContext({
       resource: 'account',
-      operation: 'get',
+      operation: 'whoami',
     });
     ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }, { json: {} }, { json: {} }]);
     ctx.helpers.httpRequestWithAuthentication.mockResolvedValue(ACCOUNT);
