@@ -1065,10 +1065,23 @@ export class Shipstatic implements INodeType {
             name: 'idempotencyKey',
             type: 'string',
             default: '',
-            // eslint-disable-next-line n8n-nodes-base/node-param-placeholder-miscased-id -- `$execution.id` is n8n expression syntax, not prose; `$execution.ID` is not a variable.
-            placeholder: '={{ $execution.id }}',
+            // NO `placeholder`, and the reason is external rather than
+            // aesthetic. It used to read `={{ $execution.id }}` behind an
+            // inline disable for `node-param-placeholder-miscased-id` (the rule
+            // wants `ID`; `$execution.ID` is not a variable, so the rule is
+            // wrong here and its autofix would BREAK the expression).
+            //
+            // The disable does not work where it counts: n8n's verification
+            // scanner runs eslint with `allowInlineConfig: false`, so every
+            // inline directive in this repo is overruled during the check that
+            // decides Cloud listing. Measured 2026-08-19 — the published
+            // `1.0.0-beta.1` failed the scan on exactly this line WITH the
+            // disable present.
+            //
+            // So the example moved into the description, where no rule
+            // applies and the reader sees it just as well.
             description:
-              'Key the ATTEMPT, never the try. A retry carrying the same key replays the original deployment instead of creating a second one — which matters most here, because Retry On Fail is a core n8n feature and makes this the platform surface most likely to retry automatically. Use a value that is stable across retries of one logical deploy (an execution ID, a commit SHA) and different for the next one. Omit it and every run deploys afresh.',
+              'Key the ATTEMPT, never the try. A retry carrying the same key replays the original deployment instead of creating a second one — which matters most here, because Retry On Fail is a core n8n feature and makes this the platform surface most likely to retry automatically. Use a value that is stable across retries of one logical deploy and different for the next one; an expression reading the execution ID is the usual choice, and a commit SHA works too. Omit it and every run deploys afresh.',
           },
           LABELS_OPTION,
           {

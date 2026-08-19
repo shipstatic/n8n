@@ -212,9 +212,35 @@ removing the script does not unset it.
 ### Two linters, and only one of them is a linter
 
 `pnpm lint` is Biome — the platform's one lint + format tool. `pnpm lint:n8n` is
-eslint carrying the community-nodes plugin above: the ruleset **n8n Cloud
-verification is judged against**, a contract with an external party that happens
-to ship as a plugin. Both run in CI. Formatting is Biome's alone.
+eslint carrying the community-nodes plugin above. Both run in CI. Formatting is
+Biome's alone.
+
+**`pnpm lint:n8n` APPROXIMATES the verification contract; it is not that
+contract.** This file used to claim it was, and the claim cost a failed scan.
+`@n8n/scan-community-package` is what n8n actually runs, and it differs in three
+ways that all matter (read from `scanner/scanner.mjs`, 0.32.0, 2026-08-19):
+
+- **`allowInlineConfig: false`.** Every `eslint-disable` in this repo is
+  OVERRULED during the check that decides Cloud listing. Proven, not inferred:
+  `1.0.0-beta.1` failed the scan on a line whose disable comment was present in
+  the scanned commit. **Consequence: a rule you disagree with must be resolved
+  in the CODE, not annotated away.**
+- **It fails on `errorCount > 0` only.** Warnings appear in the report and do
+  not fail it — which is what makes the themed-icon refusal survivable, and is
+  why that refusal is a decision rather than a gamble.
+- **It lints twice**: the source it fetches from GitHub *by provenance
+  attestation*, and the published tarball. The provenance is not decoration —
+  it is how the scanner finds the source to check. That is a second, unadvertised
+  reason the OIDC posture earns its keep.
+
+So the local gate stays useful (it is faster, and `--max-warnings 0` makes it
+stricter in the one direction that costs nothing), but **the scan is the
+authority, it needs a PUBLISHED version, and it therefore runs at T6 rather
+than in CI.** Re-run it on every release candidate:
+
+```bash
+npx @n8n/scan-community-package n8n-nodes-shipstatic@<version>
+```
 
 ### Release — the npm publish law, untranslated
 
