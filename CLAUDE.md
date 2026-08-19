@@ -679,6 +679,29 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 
 `n8n-node dev` creates a symlink that n8n's icon serving doesn't resolve. The icon always shows as the generic fallback in dev mode. **Works correctly when installed from npm.**
 
+### The Themed-Icon Warning Is Refused On The Merits
+
+`@n8n/community-nodes/icon-prefer-themed-variants` wants
+`icon: { light, dark }`, and the `n8n-workflow` typing has allowed that form
+since well before the pinned version (`Themed<IconFile>`, `interfaces.d.ts`).
+So the blocker was never the types, and it is not a missing asset either.
+
+**The rule warns on SHAPE and cannot see content.** It fires on any string
+icon. The problem it exists for is the icon with a transparent ground and dark
+strokes, which vanishes on a dark canvas. This mark is a solid `#EE6723` tile
+with white glyphs — it carries its own ground and renders identically either
+way. A themed pair would be two files differing in nothing.
+
+Recorded as a REFUSAL rather than a deferral, because the difference matters to
+whoever reads the suppression next: nothing is owed, and no operator asset is
+pending. **Expiry:** if the brand mark ever loses its tile — a transparent
+ground, or glyphs that borrow the host's colour — the rule becomes correct and
+the pair is owed that day.
+
+The suppression sits inline at the `icon` line, not in `eslint.config.mjs`, so
+the decision is visible where the icon is. It is the only suppression in the
+tree, which is what `--max-warnings 0` is for.
+
 ### SVG Icon Requirements
 
 No `<filter>`, `<clipPath>`, `<mask>`, `<style>`, or embedded CSS. n8n sanitizes SVGs and strips these.

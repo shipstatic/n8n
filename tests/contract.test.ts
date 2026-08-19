@@ -347,6 +347,32 @@ describe('operation catalogue', () => {
     }
   });
 
+  it('the README documents all three input modes and every 0.x break', () => {
+    // The README is the only upgrade instruction a 0.x user gets, and one of
+    // the four breaks it lists cannot be guarded in code (a stored-but-
+    // undeclared `binaryData` is invisible to `getNodeParameter` — measured).
+    // So for that one, this prose IS the mitigation, which is what earns it a
+    // fence rather than a review.
+    for (const mode of ['Binary Files', 'Text Content', 'Files (JSON)']) {
+      expect(README).toContain(mode);
+    }
+    expect(README).toContain('## Upgrading from 0.x');
+    for (const clause of [
+      'Re-enter your credential',
+      'Re-pick the operation',
+      'Re-select your Deploy input mode',
+      'Keyless deploys changed',
+    ]) {
+      expect(README).toContain(clause);
+    }
+  });
+
+  it('the README teaches the files grammar it asks agents to produce', () => {
+    for (const token of [FILES_GRAMMAR.PATH, FILES_GRAMMAR.CONTENT, 'base64']) {
+      expect(README).toContain(token);
+    }
+  });
+
   it('offers exactly the three documented input modes', () => {
     // The selector that replaced 0.x's `binaryData` boolean. Pinned like the
     // operation catalogue and for the same reason: a renamed value reaches a
