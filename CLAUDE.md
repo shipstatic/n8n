@@ -305,6 +305,35 @@ Both wrap transport errors in `NodeApiError` at the I/O boundary so the rest of 
 - **`apiRequest`** → `helpers.httpRequestWithAuthentication`. Most ops need n8n's credential system to inject the Bearer header.
 - **`uploadDeployment`** → `helpers.request`. n8n's modern `httpRequest` does not reliably handle multipart `FormData` (proven across v0.5–0.6 of this node); the legacy `request` helper is the only path that produces a working multipart upload — same fallback Slack, S3, and Google Drive use for file uploads. Auth is manual because deploy is the ONE operation with optional credentials, and the credential-aware helper cannot express "send this header only if a credential exists".
 
+**This is a WATCHED refusal, not a permanent one.** The paragraph above used to
+read as settled, and two facts stop it from being:
+
+- **`helpers.request` is formally deprecated.** Measured, not reported:
+  `n8n-workflow@2.12.0`, `dist/esm/interfaces.d.ts:559–562` —
+  `@deprecated Use .httpRequest instead`. (Its sibling
+  `requestWithAuthentication` carries the same tag.) It works today: the T7
+  sitting deployed through it on n8n 2.35.4 and the base64 bytes round-tripped
+  intact.
+- **The shield is real too.** Slack, S3 and Google Drive ride this same helper
+  for their uploads, so n8n cannot remove it without breaking its own core
+  nodes first. Realistic exposure is low — which is the reason to watch rather
+  than to migrate now.
+
+**And the part that actually matters: our own measurement is two platform
+generations old.** "`httpRequest` can't do multipart" was established on
+v0.5–0.6 of this node and has never been re-run against 2.x. A refusal resting
+on a stale measurement is the shape this estate keeps paying for, so it gets a
+named condition instead of a standing "do not modernize":
+
+> **Re-measure `httpRequest` multipart against current n8n at the next
+> maintenance window — and MANDATORILY before adopting any n8n 3.x, or on any
+> changelog signal that the legacy helpers are being removed. If the modern
+> helper handles multipart, migrate at leisure.**
+
+Until that measurement says otherwise the refusal stands, and
+`uploadDeployment` keeps `helpers.request`. What changed is that it now has an
+expiry someone can act on rather than an instruction to stop thinking.
+
 **There was a third.** `fetchAgentToken` minted a short-lived token through `POST /tokens/agent` before every keyless deploy. The 2.x API deleted that endpoint, and the fix was a deletion rather than a port: anonymity is granted **in band** now — a credential-less `POST /deployments` receives the public-account agent identity per request, and the response carries the claim URL and expiry. The node's suite proves the deletion took by asserting a keyless deploy is exactly ONE request.
 
 ### Operations (15 total)
