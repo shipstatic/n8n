@@ -24,19 +24,39 @@ Restart n8n after installing.
 
 Add a **ShipStatic** node to your workflow. No credentials to configure.
 
-**From binary files** (Binary File toggle ON — default):
+Set Resource to **Deployment**, Operation to **Deploy**, then pick where the
+files come from with **Input**:
 
-1. Set Resource to **Deployment**, Operation to **Deploy**
-2. Connect binary files from an upstream node (e.g. HTTP Request, Google Drive, Convert to File)
-3. Run — you get a live URL on `*.shipstatic.com`
+**Binary Files** (default) — the workflow-native path.
 
-**From text content** (Binary File toggle OFF):
+1. Connect binary files from an upstream node (HTTP Request, Google Drive,
+   Read/Write Files, Convert to File)
+2. Run — you get a live URL on `*.shipstatic.com`
 
-1. Set Resource to **Deployment**, Operation to **Deploy**, toggle **Binary File** off
-2. Paste or wire your HTML into **File Content**
-3. Run — deployed as `index.html` by default (customizable via **File Name**)
+Each input item becomes one file, and a shared leading directory is stripped,
+so a `dist/` build deploys as `index.html` rather than `dist/index.html`.
 
-That's it. Your site is live instantly. No token, no sign-up, no configuration.
+**Text Content** — one file, typed or wired in.
+
+1. Paste or wire your HTML into **File Content**
+2. Run — deployed as `index.html` by default (change it with **File Name**)
+
+**Files (JSON)** — a whole site as data.
+
+Give it an array of files:
+
+```json
+[
+  { "path": "index.html", "content": "<h1>Hello</h1>" },
+  { "path": "style.css", "content": "body { margin: 0 }" }
+]
+```
+
+Content is plain text by default. For genuinely binary files — images, fonts —
+add `"encoding": "base64"` to that entry and pass base64 bytes. Paths are used
+exactly as written, so this mode never rewrites them.
+
+That is it. Your site is live instantly. No token, no sign-up, no configuration.
 
 Deployments made without credentials are public and expire in 3 days. The output includes a **claim URL** — visit it to keep the site permanently.
 
@@ -168,7 +188,50 @@ You can also switch any field to **Expression** mode to use values from upstream
 
 ## AI Agent Support
 
-This node works as a tool in n8n's AI Agent workflows (`usableAsTool: true`). Connect it to an AI agent and let it deploy sites, manage domains, and check deployment status as part of a conversation.
+This node works as a tool in n8n's AI Agent workflows (`usableAsTool: true`).
+Connect it to an AI agent and let it deploy sites, manage domains, and check
+deployment status as part of a conversation.
+
+**Use Files (JSON) for agent deploys.** An agent fills a node's *parameters*;
+it has no way to hand over binary items, so Binary Files mode is not reachable
+from a tool call. Files (JSON) is — point the **Files** field at the agent and
+it can write a whole multi-file site:
+
+```json
+[
+  { "path": "index.html", "content": "<h1>Hello</h1><link rel=stylesheet href=style.css>" },
+  { "path": "style.css", "content": "body { font-family: system-ui }" }
+]
+```
+
+The field's description tells the model the schema, so a capable agent gets it
+right without further prompting. Two things worth knowing:
+
+- **Text is text.** Content is plain by default; models should not base64 the
+  HTML. `"encoding": "base64"` is for images and fonts only.
+- **Deletes ask first.** Both Delete operations carry a confirm-with-the-user
+  instruction in the text the agent reads.
+
+## Upgrading from 0.x
+
+The 1.x node speaks the current ShipStatic platform; 0.x spoke a retired one
+and its keyless deploy no longer works at all. Upgrading is worth it, and it
+changes four things in saved workflows:
+
+1. **Re-enter your credential.** The field is now a single **Token** slot that
+   takes either an API key or a deploy token. A credential created for 0.x
+   stored its value in an "API Key" field that 1.x does not read — the node
+   refuses to deploy rather than silently falling back to an anonymous public
+   deployment, so you will see a clear error until you re-enter it.
+2. **Re-pick the operation where you used Remove.** `remove` became `delete`,
+   matching the rest of the platform.
+3. **Re-select your Deploy input mode.** The Binary File toggle became the
+   **Input** selector (Binary Files / Text Content / Files (JSON)). Workflows
+   that used the toggle in its OFF position — text content — do not carry over
+   and will default to Binary Files.
+4. **Keyless deploys changed internally.** They no longer mint a token first.
+   Nothing to do; anonymous deploys keep working, and they work again — this is
+   the break that made 0.x's headline feature stop functioning.
 
 ## Resources
 

@@ -24,9 +24,16 @@ export class ShipstaticApi implements ICredentialType {
       type: 'string',
       typeOptions: { password: true },
       default: '',
-      placeholder: 'ship-… or deploy-…',
+      // A FILL SLOT, so it names its credential rather than eliding it. The
+      // estate retired `ship-…` in paste positions on 2026-08-15: an ellipsis
+      // elides a value the platform returns, it does not instruct someone who
+      // must type one. A form input is the purest case of the rule — it is not
+      // prose describing a slot, it IS the slot. The prefixes stay (a reader
+      // still learns the classification the server dispatches on) and the
+      // `your-` morpheme says substitute me.
+      placeholder: 'ship-your-api-key or deploy-your-token',
       description:
-        'An API key or a deploy token — one slot takes either. Create a free API key at <a href="https://my.shipstatic.com/api-key">my.shipstatic.com/api-key</a>. A deploy token is deploy-scoped: it runs the Deploy operation and nothing else, so it will FAIL the connection test below — that is expected, not a broken credential.',
+        'An API key or a deploy token — one slot takes either, and the server tells them apart by shape, so there is nothing to select. The field is called Token and your API key is what goes in it: one credential, two names. Create a free API key at <a href="https://my.shipstatic.com/api-key">my.shipstatic.com/api-key</a>. A deploy token is deploy-scoped: it runs the Deploy operation and nothing else, so it will FAIL the connection test below — that is expected, not a broken credential.',
     },
   ];
 
