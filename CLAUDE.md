@@ -273,14 +273,63 @@ don't build it.
 | 14  | Domain     | Verify    | `POST /domains/{name}/verify`                          |
 | 15  | Account    | Get       | `GET /account`                                         |
 
-### Deploy — Two Input Modes
+### Deploy — Three Input Modes
 
-Deploy has a **Binary File** toggle (matching the S3 node pattern):
+Deploy has an **Input** selector. It replaced 0.x's `binaryData` boolean, because
+a third source cannot be a second boolean:
 
-- **Binary File ON** (default): reads files from binary data. Each input item becomes one file. Paths built from `binaryData.directory` + `binaryData.fileName`. Common directory prefixes are stripped for clean deployment URLs.
-- **Binary File OFF**: takes text content + file name directly. Defaults to `index.html`. Single file deploy.
+- **Binary Files** (default): reads files from binary data. Each input item
+  becomes one file. Paths built from `binaryData.directory` +
+  `binaryData.fileName`. **Common directory prefixes are stripped** — these
+  paths carry an accident of where the files sat on a disk.
+- **Text Content**: text + file name directly. Defaults to `index.html`.
+- **Files (JSON)**: an array of `{ path, content, encoding? }`. The
+  agent-native path, and the reason the selector exists.
 
-Both modes use n8n's `request` helper with the `formData` option — the same proven pattern used by Slack, S3, and Google Drive for multipart file uploads. The formData includes:
+**Why the third mode exists — MEASURED, not assumed** (2026-08-19,
+n8n-workflow 2.12.0; the full measurement is under "How an AI Agent actually
+reaches this node"): `$fromAI` carries `string`, `number`, `boolean`, `json`
+and nothing else, and binary reaches a node through input ITEMS rather than
+parameters. So an AI Agent calling this node as a tool has **no channel for
+binary at all** — a multi-file site was un-deployable from a tool call.
+
+Two consequences that shaped the field rather than decorating it:
+
+- **The resolved value is the main road.** n8n's `json` arm type-checks the
+  VALUE, so an agent's array arrives already parsed. `JSON.parse` is the
+  fallback for a hand-typed field, not the primary path.
+- **The refusal names the array.** That same host-side validator admits "a
+  non-empty object OR a non-empty array", so an agent can send `{...}` having
+  passed every upstream check. `null` is named as `null` too, since
+  `typeof null === 'object'` would tell someone who sent nothing that they
+  sent an object.
+
+**The grammar's three divergences from the hosted MCP are DECIDED, not
+inherited.** One shape shared by two agent-facing surfaces is a contract only
+if both refuse the same inputs:
+
+| Behaviour | Decision |
+|---|---|
+| Path checks (empty, leading `/`, `\`, `.`/`..`, null byte) | **Mirrored** from the MCP's `validatePath`, same reason: fail before a wasted upload |
+| base64 | **Structurally validated.** `Buffer.from(x,'base64')` NEVER throws — it silently discards anything outside the alphabet, so the payload the MCP refuses would deploy here as garbage bytes. Wrapped base64 is accepted; whitespace is transport, not garbage |
+| Common-prefix stripping | **None in files mode.** These paths were WRITTEN; the MCP's grammar promises "the site root is implied by these paths". Stripping stays binary-only, and a test pins it |
+
+That line — structural validation of the node's OWN input format is the node's
+job, PLATFORM POLICY (extensions, sizes, junk files) is the API's and relays
+verbatim — is what permits the first two without contradicting "no client-side
+prevalidation" below.
+
+**Grammar ownership.** `{ path, content, encoding? }` with a `utf-8` default has
+THREE holders: the API's `jsonUploadSchema` (the wire original), the hosted
+MCP's `FileSpec`, and this node. The owner is `@shipstatic/types`, beside
+`DEPLOY_FIELDS` whose multipart half already lives there. **The promotion rides
+the next types convoy** — a constitution change moves as a full constellation
+walk, and coupling a broken public listing's fix to one inverts the priorities.
+Until then `tests/contract.test.ts` pins the grammar LOCALLY and says so: a
+self-consistency pin that cannot catch the API renaming a field. Expiry: the
+export exists → the pin becomes an owner-compare.
+
+All three modes use n8n's `request` helper with the `formData` option — the same proven pattern used by Slack, S3, and Google Drive for multipart file uploads. The formData includes:
 
 - `files[]` — one File entry per item (or one from text content)
 - `checksums` — JSON array of MD5 hashes (via `node:crypto`)
@@ -314,14 +363,33 @@ SDK uses, so client and server cannot disagree on dispatch. The credential TYPE
 id stays `shipstaticApi`: it names the platform, and renaming it would orphan
 every stored credential.
 
-Deploy attaches `Authorization` only when a token exists. Two boundary rules:
+Deploy attaches `Authorization` only when a token exists. Three boundary rules:
 
-- **An empty field is absence of intent**, not a credential — it deploys
-  anonymously rather than presenting a bare `Bearer `. Same normalization the
-  SDK applies to an empty `SHIP_TOKEN`.
+- **No credential ATTACHED is the anonymous door**, and it is the product.
+  `getCredentials` throws; the deploy proceeds keyless.
+- **A credential attached with an EMPTY slot is refused** (changed 2026-08-19).
+  Those are two different states and collapsing them is what made the 0.x
+  upgrade dangerous: a credential created for the 0.x node stored its value
+  under `apiKey`, which 1.x does not read, so every upgraded workflow arrives
+  with a credential attached and an empty `token`. Deploying that anonymously
+  SUCCEEDS and returns a public deployment expiring in days where the user
+  expected a permanent one under their account. **A wrong success is the worst
+  failure this node has.** The previous rule ("an empty field is absence of
+  intent", by analogy with an empty `SHIP_TOKEN`) held for an env var, where
+  unset is the normal CI state — attaching a credential in a UI is a
+  deliberate act, and the analogy did not survive it.
 - **Fail-closed anonymity**: a token that is present and rejected fails with a
   typed error. It never demotes the deploy to an anonymous one under
   PUBLIC_ACCOUNT.
+
+**The other 0.x migration guard is IMPOSSIBLE, and that is measured rather than
+assumed.** A 0.x text-mode workflow stored `binaryData: false`, which 1.x does
+not declare; catching it would mean reading a stored-but-undeclared parameter.
+`getNodeParameters` (`n8n-workflow/dist/esm/node-helpers.js:509`) iterates the
+DECLARED property array, so such a key is never visited — there is nothing to
+read. Measured at n8n-workflow 2.12.0. That break stays loud by accident (the
+missing binary field errors) rather than by design, and its mitigation is the
+README's upgrade section plus the release notes.
 
 **The credential test's documented limit.** `GET /account` is the connection
 test, and a `deploy-` token FAILS it — deploy tokens are deploy-scoped, and

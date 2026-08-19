@@ -119,7 +119,7 @@ function liveContext(params: Record<string, any>, token?: string) {
 const deployParams = (overrides: Record<string, any> = {}) => ({
   resource: 'deployment',
   operation: 'deploy',
-  binaryData: true,
+  input: 'binary',
   binaryPropertyName: 'data',
   options: {},
   ...overrides,
@@ -228,7 +228,7 @@ describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
     // whether the detector agrees with the mirror.
     const [item] = await run(
       deployParams({
-        binaryData: false,
+        input: 'text',
         fileName: 'index.html',
         fileContent:
           '<html><head><script type="module" src="/assets/app.js"></script></head>' +
@@ -239,6 +239,65 @@ describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
     // Two files reached the API: the page, and the config the node appended.
     expect(item.json.files).toBe(2);
     expect(item.json.config).toBe(true);
+  });
+});
+
+describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
+  // The one tier that can prove the whole files-mode path: JSON in, strict
+  // base64 decode, multipart out, R2 storage, and the router serving the bytes
+  // back. Every step between the parser and the served file is somebody else's
+  // code, so self-consistency proves nothing here.
+  it('deploys a two-file site and serves both files back byte-for-byte', async () => {
+    // A real binary, small enough to read in the assertion: a 1x1 GIF. Its
+    // bytes are the point — if the strict-base64 check or the multipart
+    // encoding mangled them, the served file differs and this fails. That is
+    // the failure the mocked tier structurally cannot produce.
+    const gifBase64 = 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    const gifBytes = Buffer.from(gifBase64, 'base64');
+    const html = '<h1>files mode</h1><img src="pixel.gif">';
+
+    const [item] = await run(
+      deployParams({
+        input: 'files',
+        files: [
+          { path: 'index.html', content: html },
+          { path: 'pixel.gif', content: gifBase64, encoding: 'base64' },
+        ],
+        // The site is deliberately NOT a SPA, so the file count stays 2 and a
+        // silent `ship.json` append would show up as a failure here.
+        options: { spaDetect: false },
+      }),
+      TOKEN,
+    );
+
+    expect(item.json.files).toBe(2);
+
+    const base = `https://${item.json.deployment}`;
+    const servedHtml = await fetch(`${base}/index.html`);
+    expect(servedHtml.status).toBe(200);
+    expect(await servedHtml.text()).toBe(html);
+
+    const servedGif = await fetch(`${base}/pixel.gif`);
+    expect(servedGif.status).toBe(200);
+    // Byte equality, not length: a mangled decode can preserve the size.
+    expect(Buffer.from(await servedGif.arrayBuffer()).equals(gifBytes)).toBe(true);
+  });
+
+  it('relays the API refusal for a path the node did not pre-judge', async () => {
+    // The node checks its OWN input format (shape, path structure, base64) and
+    // leaves PLATFORM POLICY to the API. This proves the second half is really
+    // reaching the server rather than being caught locally: a blocked
+    // extension is the API's rule, and its sentence must arrive intact.
+    await expect(
+      run(
+        deployParams({
+          input: 'files',
+          files: [{ path: 'payload.exe', content: 'not really an executable' }],
+          options: { spaDetect: false },
+        }),
+        TOKEN,
+      ),
+    ).rejects.toThrow();
   });
 });
 

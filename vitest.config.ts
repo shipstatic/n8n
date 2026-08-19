@@ -69,6 +69,9 @@ export default defineConfig({
        * the honest fix was deleting the dead arm. Coverage caught dead code,
        * which is not what coverage is usually for.
        *
+       * 98.62 → 98.64 with the attached-but-empty credential refusal
+       * (219/222), same three arms.
+       *
        * NOTE: thresholds catch coverage DECAY. They cannot catch a test that
        * asserts nothing; a tautology neither raises nor lowers coverage. The
        * fences in `tests/contract.test.ts` are what hold the contracts a
@@ -76,7 +79,7 @@ export default defineConfig({
        */
       thresholds: {
         statements: 100,
-        branches: 98.62,
+        branches: 98.64,
         functions: 100,
         lines: 100,
       },
