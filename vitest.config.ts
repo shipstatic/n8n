@@ -58,6 +58,17 @@ export default defineConfig({
        * reverse: re-measure and re-raise every time, or the next regression
        * hides in the slack the last improvement created.
        *
+       * Raised again 98.22 → 98.62 the same day with Files (JSON) mode (T2):
+       * 215/218. **And here the ratchet did the job the enumeration exists
+       * for.** T2's first pass measured 98.14 with FOUR uncovered arms, so the
+       * floor refused it. The fourth was not a missing test — it was an
+       * `Array.isArray(parsed) ? 'array' : …` arm written inside a block
+       * already guarded by `!Array.isArray(parsed)`, unreachable by
+       * construction. A percentage alone would have invited a test for it; the
+       * enumerated-arms invariant said "these three, and they are these", so
+       * the honest fix was deleting the dead arm. Coverage caught dead code,
+       * which is not what coverage is usually for.
+       *
        * NOTE: thresholds catch coverage DECAY. They cannot catch a test that
        * asserts nothing; a tautology neither raises nor lowers coverage. The
        * fences in `tests/contract.test.ts` are what hold the contracts a
@@ -65,7 +76,7 @@ export default defineConfig({
        */
       thresholds: {
         statements: 100,
-        branches: 98.22,
+        branches: 98.62,
         functions: 100,
         lines: 100,
       },

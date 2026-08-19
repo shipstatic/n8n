@@ -88,6 +88,70 @@ export function stripCommonPrefix(paths: string[]): string[] {
   return segments.map((s) => s.slice(strip).join('/'));
 }
 
+/**
+ * The Files (JSON) grammar, restated.
+ *
+ * `{ path, content, encoding? }` with `utf-8` as the default has THREE holders:
+ * the API's own JSON upload transport (`jsonUploadSchema` in
+ * `cloudflare/api/src/lib/upload-input.ts` — the wire original), the hosted
+ * MCP's `FileSpec`, and this. The owner-to-be is `@shipstatic/types`, beside
+ * `DEPLOY_FIELDS`, whose multipart half already lives there; the promotion
+ * rides the next types convoy rather than blocking a broken public listing on
+ * a constellation walk.
+ *
+ * Until then `tests/contract.test.ts` pins these as a LOCAL table, and the plan
+ * says so honestly: it is a self-consistency pin, not an owner-compare. The
+ * fence flips to a real comparison the day the export exists.
+ */
+const FILE_ENCODINGS = ['utf-8', 'base64'] as const;
+type FileEncoding = (typeof FILE_ENCODINGS)[number];
+export const FILES_GRAMMAR = {
+  PATH: 'path',
+  CONTENT: 'content',
+  ENCODING: 'encoding',
+  DEFAULT_ENCODING: 'utf-8' as FileEncoding,
+  ENCODINGS: FILE_ENCODINGS,
+} as const;
+
+/**
+ * Reject a path this node can see is wrong, before a wasted upload.
+ *
+ * Mirrors the hosted MCP's `validatePath` check for check, deliberately: two
+ * agent-facing surfaces speaking one grammar must refuse the same inputs, or
+ * the grammar is a shape rather than a contract. This is STRUCTURAL validation
+ * of the node's own input format — not platform policy, which stays the API's
+ * (extensions, sizes, junk files) and relays verbatim.
+ */
+function checkDeployPath(path: string): string | undefined {
+  if (path.length === 0) return 'is empty';
+  if (path.startsWith('/')) return 'starts with "/" — paths are relative to the site root';
+  if (path.includes('\\')) return 'contains a backslash — use "/" as the separator';
+  if (path.includes('\0')) return 'contains a null byte';
+  for (const segment of path.split('/')) {
+    if (segment === '.' || segment === '..') return 'contains a "." or ".." segment';
+  }
+  return undefined;
+}
+
+/**
+ * Decode base64 that is ACTUALLY base64.
+ *
+ * `Buffer.from(x, 'base64')` never throws — it silently discards anything
+ * outside the alphabet and returns whatever it managed to decode. So the
+ * payload the MCP refuses (its `atob` throws) would deploy here as garbage
+ * bytes, and the user would get a broken image rather than an error. The
+ * structural check is the refusal.
+ *
+ * Whitespace is stripped first because wrapping base64 at a column is a normal
+ * transport convention that every decoder accepts; what is refused is content
+ * that is not base64 at all.
+ */
+function decodeBase64Strict(content: string): Buffer | undefined {
+  const compact = content.replace(/\s+/g, '');
+  if (compact.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) return undefined;
+  return Buffer.from(compact, 'base64');
+}
+
 // Shared sub-property used in both Options collections (deploy + domain.set).
 // Defined once so the field shape stays in lockstep across resources.
 const LABELS_OPTION: INodeProperties = {
@@ -408,18 +472,128 @@ async function searchPage(
 // Deploy — the only operation with optional credentials and multipart upload
 // =============================================================================
 
+/**
+ * Read the Files (JSON) input into the same shape the other two modes produce.
+ *
+ * **The value arrives in two shapes, and the AGENT path is the second one.**
+ * Measured at `n8n-workflow@2.12.0`: a `type: 'json'` parameter typed by hand
+ * is a STRING, but one an expression produced — `{{ $json.files }}`, or an AI
+ * Agent's `$fromAI(..., 'json')` — is the RESOLVED VALUE. n8n's own
+ * `generateZodSchema` type-checks that value ("a non-empty object or a
+ * non-empty array"), so what lands here from an agent is a real array. Parsing
+ * is the fallback, not the main road.
+ *
+ * That same host-side check admits a non-empty OBJECT, so an agent can hand
+ * over `{...}` in perfect good faith and n8n will pass it along. The refusal
+ * has to name the shape actually wanted, or the agent has nothing to correct
+ * toward.
+ */
+function readFilesInput(ctx: IExecuteFunctions): { path: string; content: Buffer; md5: string }[] {
+  const raw = ctx.getNodeParameter('files', 0);
+  const fail = (message: string, description?: string): never => {
+    throw new NodeOperationError(ctx.getNode(), message, {
+      itemIndex: 0,
+      ...(description ? { description } : {}),
+    });
+  };
+
+  let parsed: unknown = raw;
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      fail(
+        'Files is not valid JSON',
+        'Expected a JSON array of files, e.g. [{"path": "index.html", "content": "<h1>Hi</h1>"}].',
+      );
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    // The received type rides the MESSAGE, not the description. Two reasons:
+    // n8n renders the message and treats the description as secondary, and an
+    // agent correcting its own tool call reads the message first. `null` is
+    // named explicitly because `typeof null === 'object'` would otherwise tell
+    // someone who sent nothing that they sent an object.
+    //
+    // This is the refusal an agent is most likely to meet in good faith: n8n's
+    // host-side validator for a `json` parameter admits "a non-empty object OR
+    // a non-empty array" (measured, T0b), so `{...}` passes every check
+    // upstream and arrives here. Naming the array is what gives the agent
+    // something to correct toward.
+    // No `array` arm: this block is already guarded by `!Array.isArray`, so one
+    // would be unreachable by construction — and the ratchet caught it as a
+    // fourth uncovered branch the moment it was written.
+    const received = parsed === null || parsed === undefined ? 'null' : typeof parsed;
+    fail(
+      `Files must be a JSON array of files — received ${received}`,
+      'Expected an array like [{"path": "index.html", "content": "<h1>Hi</h1>"}] — one object per file, each with "path" and "content".',
+    );
+  }
+
+  const collected: { path: string; content: Buffer; md5: string }[] = [];
+  for (const [index, entry] of (parsed as unknown[]).entries()) {
+    const where = `File ${index + 1}`;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      fail(`${where} is not an object`, 'Each file must be {"path": …, "content": …}.');
+    }
+    const record = entry as Record<string, unknown>;
+    const path = record[FILES_GRAMMAR.PATH];
+    const content = record[FILES_GRAMMAR.CONTENT];
+    if (typeof path !== 'string') fail(`${where} is missing a "path" string`);
+    if (typeof content !== 'string') {
+      fail(
+        `${where} ("${path as string}") is missing a "content" string`,
+        'Content is the file\'s text. For binary files set "encoding": "base64" on that entry and pass base64 bytes.',
+      );
+    }
+
+    const pathProblem = checkDeployPath(path as string);
+    if (pathProblem) fail(`${where} has an invalid path: it ${pathProblem}`);
+
+    const encoding = record[FILES_GRAMMAR.ENCODING] ?? FILES_GRAMMAR.DEFAULT_ENCODING;
+    if (typeof encoding !== 'string' || !FILE_ENCODINGS.includes(encoding as FileEncoding)) {
+      fail(
+        `${where} ("${path as string}") has an unknown encoding`,
+        `Use ${FILE_ENCODINGS.map((e) => `"${e}"`).join(' or ')}; omit it for plain text.`,
+      );
+    }
+
+    let buffer: Buffer | undefined;
+    if (encoding === 'base64') {
+      buffer = decodeBase64Strict(content as string);
+      if (!buffer) {
+        fail(
+          `${where} ("${path as string}") is marked base64 but is not valid base64`,
+          'Pass text content as a plain string with no encoding — only genuinely binary files (images, fonts) should be base64.',
+        );
+      }
+    } else {
+      buffer = Buffer.from(content as string, 'utf-8');
+    }
+
+    collected.push({
+      path: path as string,
+      content: buffer as Buffer,
+      md5: md5(buffer as Buffer),
+    });
+  }
+
+  return collected;
+}
+
 async function handleDeploy(
   ctx: IExecuteFunctions,
   items: INodeExecutionData[],
   token: string | undefined,
 ): Promise<INodeExecutionData[]> {
-  const isBinaryData = ctx.getNodeParameter('binaryData', 0) as boolean;
+  const input = ctx.getNodeParameter('input', 0) as string;
   const options = ctx.getNodeParameter('options', 0) as IDataObject;
 
-  // 1. Collect files — from binary data or text content
+  // 1. Collect files — from binary data, text content, or a JSON file list
   const files: { path: string; content: Buffer; md5: string }[] = [];
 
-  if (isBinaryData) {
+  if (input === 'binary') {
     const binaryPropertyName = ctx.getNodeParameter('binaryPropertyName', 0) as string;
     for (let i = 0; i < items.length; i++) {
       const binaryData = ctx.helpers.assertBinaryData(i, binaryPropertyName);
@@ -433,6 +607,18 @@ async function handleDeploy(
         md5: md5(buffer),
       });
     }
+    // 1a. Binary only — strip the longest shared directory so a build output's
+    //     URLs read as the user expects. Filesystem-derived paths carry an
+    //     accident of where the files sat; the other two modes carry paths
+    //     someone WROTE, and rewriting those would be a surprise.
+    const stripped = stripCommonPrefix(files.map((f) => f.path));
+    for (const [idx, file] of files.entries()) {
+      file.path = stripped[idx];
+    }
+  } else if (input === 'files') {
+    for (const entry of readFilesInput(ctx)) {
+      files.push(entry);
+    }
   } else {
     const fileContent = ctx.getNodeParameter('fileContent', 0) as string;
     const fileName = ctx.getNodeParameter('fileName', 0) as string;
@@ -443,14 +629,8 @@ async function handleDeploy(
   if (files.length === 0) {
     throw new NodeOperationError(ctx.getNode(), 'No files to deploy — all input items were empty', {
       description:
-        'Connect a node that produces binary data (e.g. Read Binary Files, HTTP Request, Convert to File), or toggle Binary File off and provide File Content.',
+        'Connect a node that produces binary data (e.g. Read Binary Files, HTTP Request, Convert to File), or switch Input to Text Content or Files (JSON).',
     });
-  }
-
-  // 2. Optimize paths — strip common directory prefix
-  const stripped = stripCommonPrefix(files.map((f) => f.path));
-  for (const [idx, file] of files.entries()) {
-    file.path = stripped[idx];
   }
 
   // 3. SPA parity — append a routing config when the build needs one and the
@@ -681,14 +861,35 @@ export class Shipstatic implements INodeType {
       // Per-operation inputs. Visibility is driven by `displayOptions.show`
       // matching the selected resource + operation.
 
-      // Deploy — binary file toggle (default) or text content fallback
+      // Deploy — where the files come from. Three modes, one downstream
+      // pipeline. Replaced the 0.x `binaryData` boolean: a third source cannot
+      // be a second boolean, and the selector is what lets an AI Agent supply a
+      // whole site (see `input: 'files'`).
       {
-        displayName: 'Binary File',
-        name: 'binaryData',
-        type: 'boolean',
-        default: true,
+        displayName: 'Input',
+        name: 'input',
+        type: 'options',
+        default: 'binary',
+        noDataExpression: true,
         displayOptions: { show: { resource: ['deployment'], operation: ['deploy'] } },
-        description: 'Whether the data to deploy should be taken from binary field',
+        options: [
+          {
+            name: 'Binary Files',
+            value: 'binary',
+            description: 'Files from upstream nodes — the workflow-native path',
+          },
+          {
+            name: 'Files (JSON)',
+            value: 'files',
+            description: 'A list of paths and contents — how an AI agent deploys a whole site',
+          },
+          {
+            name: 'Text Content',
+            value: 'text',
+            description: 'A single file typed or wired in directly',
+          },
+        ],
+        description: 'Where the files to deploy come from',
       },
       {
         displayName: 'Input Binary Field',
@@ -697,7 +898,7 @@ export class Shipstatic implements INodeType {
         default: 'data',
         required: true,
         displayOptions: {
-          show: { resource: ['deployment'], operation: ['deploy'], binaryData: [true] },
+          show: { resource: ['deployment'], operation: ['deploy'], input: ['binary'] },
         },
         hint: 'The name of the input binary field containing the file to be deployed',
       },
@@ -709,7 +910,7 @@ export class Shipstatic implements INodeType {
         required: true,
         typeOptions: { rows: 5 },
         displayOptions: {
-          show: { resource: ['deployment'], operation: ['deploy'], binaryData: [false] },
+          show: { resource: ['deployment'], operation: ['deploy'], input: ['text'] },
         },
         hint: 'The text content of the file to deploy',
       },
@@ -720,9 +921,26 @@ export class Shipstatic implements INodeType {
         default: 'index.html',
         required: true,
         displayOptions: {
-          show: { resource: ['deployment'], operation: ['deploy'], binaryData: [false] },
+          show: { resource: ['deployment'], operation: ['deploy'], input: ['text'] },
         },
         description: 'The path to deploy the content as (defaults to "index.html")',
+      },
+      {
+        displayName: 'Files',
+        name: 'files',
+        type: 'json',
+        default: '[\n  {\n    "path": "index.html",\n    "content": "<h1>Hello</h1>"\n  }\n]',
+        required: true,
+        typeOptions: { rows: 8 },
+        displayOptions: {
+          show: { resource: ['deployment'], operation: ['deploy'], input: ['files'] },
+        },
+        // Written to be read by an LLM: `usableAsTool` makes this the tool
+        // catalogue's text for the one parameter an agent must construct.
+        // States the schema, the default, and the one thing agents reliably get
+        // wrong — base64-encoding text that should have been passed as text.
+        description:
+          'The site to deploy, as a JSON array of files. Each entry is an object with "path" (relative, e.g. "index.html" or "assets/app.css") and "content". Content is plain text by default — encoding defaults to "utf-8", so pass HTML, CSS, JS, JSON or SVG directly as a normal string with no encoding step. Only for genuinely binary files (images, fonts) add "encoding": "base64" to that entry and pass base64-encoded bytes; never base64-encode text. Example: [{"path": "index.html", "content": "<h1>Hi</h1>"}, {"path": "style.css", "content": "body{margin:0}"}]',
       },
 
       // Deployment — used by get, set, delete. Resource locator gives the user

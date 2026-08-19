@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { IDataObject } from 'n8n-workflow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -104,7 +105,7 @@ function createDeployContext(
     {
       resource: 'deployment',
       operation: 'deploy',
-      binaryData: true,
+      input: 'binary',
       binaryPropertyName: 'data',
       options: {},
       ...overrides,
@@ -371,6 +372,91 @@ describe('Deploy — file collection & formData', () => {
     expect(getFormData(ctx).password).toBeUndefined();
   });
 
+  // ─── Files (JSON) mode ────────────────────────────────────────────────────
+  //
+  // The agent-native path. T0b measured how an AI Agent reaches this node:
+  // `$fromAI` carries string/number/boolean/json and NOTHING else, so a tool
+  // call cannot hand over binary items — and its `json` arm type-checks the
+  // VALUE, so what arrives is already parsed. Both facts drive these rows.
+
+  const filesCtx = (files: unknown) => createDeployContext({ input: 'files', files });
+
+  it('takes an already-resolved array — the agent path, and the main road', async () => {
+    // NOT the exotic case. An expression (`{{ $json.files }}`) or an AI Agent's
+    // `$fromAI(..., 'json')` both deliver a real array; only a hand-typed field
+    // is a string. Parsing is the fallback.
+    const ctx = filesCtx([
+      { path: 'index.html', content: '<h1>Hi</h1>' },
+      { path: 'style.css', content: 'body{margin:0}' },
+    ]);
+
+    await node.execute.call(ctx);
+
+    const fd = getFormData(ctx);
+    expect(fd['files[]']).toHaveLength(2);
+    expect((fd['files[]'] as any[]).map((f) => f.options.filename)).toEqual([
+      'index.html',
+      'style.css',
+    ]);
+    expect((fd['files[]'] as any[])[0].value.toString('utf-8')).toBe('<h1>Hi</h1>');
+  });
+
+  it('takes a typed JSON string — the fallback shape', async () => {
+    const ctx = filesCtx('[{"path":"index.html","content":"<h1>Hi</h1>"}]');
+
+    await node.execute.call(ctx);
+
+    expect(getFormData(ctx)['files[]']).toHaveLength(1);
+  });
+
+  it('defaults encoding to utf-8 and decodes base64 to the right bytes', async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const ctx = filesCtx([
+      { path: 'index.html', content: '<h1>Hi</h1>' },
+      { path: 'img/logo.png', content: png.toString('base64'), encoding: 'base64' },
+    ]);
+
+    await node.execute.call(ctx);
+
+    const entries = getFormData(ctx)['files[]'] as any[];
+    expect(entries[0].value.toString('utf-8')).toBe('<h1>Hi</h1>');
+    // Checksum-verified: the bytes are the ORIGINAL bytes, not the base64 text.
+    expect(entries[1].value.equals(png)).toBe(true);
+    const checksums = JSON.parse(getFormData(ctx).checksums as string);
+    expect(checksums[1]).toBe(createHash('md5').update(png).digest('hex'));
+  });
+
+  it('never strips a common prefix — the paths were written, not discovered', async () => {
+    // Binary mode strips because filesystem paths carry an accident of where
+    // the files sat. These paths came from an agent or an author, and the
+    // hosted MCP's grammar promises "the site root is implied by these paths".
+    const ctx = filesCtx([
+      { path: 'dist/index.html', content: 'a' },
+      { path: 'dist/app.css', content: 'b' },
+    ]);
+
+    await node.execute.call(ctx);
+
+    expect((getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename)).toEqual([
+      'dist/index.html',
+      'dist/app.css',
+    ]);
+  });
+
+  it('runs SPA detection over files-mode input like every other mode', async () => {
+    const ctx = filesCtx([{ path: 'index.html', content: '<div id="root"></div>' }]);
+    ctx.helpers.request.mockImplementation((opts: any) =>
+      opts.uri?.endsWith('/spa-check')
+        ? Promise.resolve({ isSPA: true })
+        : Promise.resolve({ deployment: 'x.shipstatic.com' }),
+    );
+
+    await node.execute.call(ctx);
+
+    const names = (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
+    expect(names).toContain('ship.json');
+  });
+
   it('sends ttl in formData when the option was added', async () => {
     const ctx = createDeployContext({ options: { ttl: 3600 } });
 
@@ -513,7 +599,7 @@ describe('Deploy — file collection & formData', () => {
 
   it('text mode falls back to index.html when File Name is cleared', async () => {
     const ctx = createDeployContext({
-      binaryData: false,
+      input: 'text',
       fileContent: '<html></html>',
       fileName: '',
     });
@@ -526,7 +612,7 @@ describe('Deploy — file collection & formData', () => {
 
   it('text mode deploys fileContent with specified fileName', async () => {
     const ctx = createDeployContext({
-      binaryData: false,
+      input: 'text',
       fileContent: '<html><body>Hello</body></html>',
       fileName: 'index.html',
     });
@@ -644,7 +730,7 @@ describe('Deploy — SPA routing', () => {
 
   it('skips the check when there is no index.html to read', async () => {
     const ctx = spaCtx(true, {
-      binaryData: false,
+      input: 'text',
       fileContent: 'hello',
       fileName: 'readme.txt',
     });
@@ -735,6 +821,90 @@ describe('Deploy — idempotency', () => {
 
 describe('Deploy — error handling', () => {
   beforeEach(() => vi.clearAllMocks());
+
+  // ─── Files (JSON) refusals ────────────────────────────────────────────────
+  //
+  // Every message is authored for whoever reads it, and for files mode that is
+  // often an LLM correcting its own tool call — so a refusal that only says
+  // "invalid" leaves it nothing to aim at. Each of these names the shape.
+
+  const filesCtx = (files: unknown) => createDeployContext({ input: 'files', files });
+  const rejects = async (files: unknown, message: RegExp) =>
+    expect(node.execute.call(filesCtx(files))).rejects.toMatchObject({
+      name: 'NodeOperationError',
+      message: expect.stringMatching(message),
+    });
+
+  it('refuses malformed JSON', async () => {
+    await rejects('[{"path": broken}]', /not valid JSON/i);
+  });
+
+  it('refuses a non-empty OBJECT by naming the array it wanted', async () => {
+    // The one an agent hits in good faith: n8n's own host-side validator for a
+    // `json` parameter admits "a non-empty object OR a non-empty array"
+    // (measured, T0b), so `{...}` reaches the node having passed every check
+    // upstream. The refusal has to describe the array, or the agent has
+    // nothing to correct toward.
+    await rejects({ 'index.html': '<h1>Hi</h1>' }, /must be a JSON array/i);
+    await rejects({ 'index.html': '<h1>Hi</h1>' }, /received object/i);
+  });
+
+  it('refuses a JSON string that parses to something other than an array', async () => {
+    await rejects('"just a string"', /must be a JSON array/i);
+  });
+
+  it('names null as null rather than as "object"', async () => {
+    // `typeof null === 'object'`, so the naive message would tell someone who
+    // sent nothing that they sent an object. The received type rides the
+    // MESSAGE because that is what n8n renders and what an agent reads first.
+    await rejects('null', /received null/i);
+  });
+
+  it('refuses an entry missing path or content, naming which file', async () => {
+    await rejects([{ content: 'x' }], /File 1 is missing a "path"/i);
+    await rejects([{ path: 'a.html' }], /File 1 .*is missing a "content"/i);
+  });
+
+  it('refuses an entry that is not an object', async () => {
+    await rejects(['index.html'], /File 1 is not an object/i);
+  });
+
+  it('mirrors the hosted MCP path checks, one refusal each', async () => {
+    await rejects([{ path: '', content: 'x' }], /is empty/i);
+    await rejects([{ path: '/index.html', content: 'x' }], /starts with "\/"/i);
+    await rejects([{ path: 'a\\b.html', content: 'x' }], /backslash/i);
+    await rejects([{ path: '../secrets', content: 'x' }], /"\." or "\.\." segment/i);
+    await rejects([{ path: 'a\0b', content: 'x' }], /null byte/i);
+  });
+
+  it('refuses an unknown encoding', async () => {
+    await rejects([{ path: 'a.html', content: 'x', encoding: 'hex' }], /unknown encoding/i);
+  });
+
+  it('refuses content marked base64 that is not base64', async () => {
+    // `Buffer.from(x, "base64")` NEVER throws — it silently discards anything
+    // outside the alphabet. Without the structural check this deploys garbage
+    // bytes and the user gets a broken image instead of an error, while the
+    // hosted MCP (whose `atob` throws) refuses the very same payload.
+    await rejects(
+      [{ path: 'logo.png', content: 'this is definitely not base64!!', encoding: 'base64' }],
+      /not valid base64/i,
+    );
+  });
+
+  it('accepts base64 wrapped across lines — whitespace is transport, not garbage', async () => {
+    const bytes = Buffer.from('hello world, this is a longer payload to wrap');
+    const wrapped = bytes.toString('base64').replace(/(.{8})/g, '$1\n');
+    const ctx = filesCtx([{ path: 'a.bin', content: wrapped, encoding: 'base64' }]);
+
+    await node.execute.call(ctx);
+
+    expect((getFormData(ctx)['files[]'] as any[])[0].value.equals(bytes)).toBe(true);
+  });
+
+  it('refuses an empty array the same way the other modes refuse zero files', async () => {
+    await rejects([], /No files to deploy/i);
+  });
 
   it('throws NodeOperationError when all input items are empty', async () => {
     const ctx = createDeployContext();

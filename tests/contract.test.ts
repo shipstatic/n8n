@@ -39,6 +39,7 @@ import { describe, expect, it } from 'vitest';
 import { ShipstaticApi } from '../credentials/ShipstaticApi.credentials';
 import { API } from '../nodes/Shipstatic/api';
 import {
+  FILES_GRAMMAR,
   IDEMPOTENCY_HEADER,
   SHIP_JSON,
   Shipstatic,
@@ -306,6 +307,57 @@ describe('operation catalogue', () => {
     expect((ttl as unknown as { description: string })?.description).toContain(
       'cannot be linked to a custom domain',
     );
+  });
+
+  it('pins the Files (JSON) grammar — a LOCAL pin, and it says so', () => {
+    // **This is a self-consistency pin, not an owner-compare, and the
+    // difference is the whole reason it carries a comment this long.**
+    //
+    // `{ path, content, encoding? }` with a `utf-8` default has THREE holders:
+    // the API's `jsonUploadSchema` (the wire original — same three names, same
+    // two literals, same default), the hosted MCP's `FileSpec` (itself a
+    // restatement of that), and this node. Three holders and silent drift is
+    // exactly what the constellation law's stopping rule promotes, and the
+    // owner is `@shipstatic/types` beside `DEPLOY_FIELDS`, whose MULTIPART half
+    // already lives there — the JSON field names are the member that never got
+    // promoted.
+    //
+    // It is not promoted YET because a constitution change moves as a full
+    // constellation convoy, and the urgent problem is a broken public listing.
+    // Coupling the fix to the convoy inverts the priorities.
+    //
+    // So this fence is honest about being weaker than the ones above it: it
+    // catches a typo inside this repo and CANNOT catch the API changing its
+    // wire names. EXPIRY: when types exports the grammar, this becomes a real
+    // comparison and the local table goes away.
+    expect(FILES_GRAMMAR.PATH).toBe('path');
+    expect(FILES_GRAMMAR.CONTENT).toBe('content');
+    expect(FILES_GRAMMAR.ENCODING).toBe('encoding');
+    expect(FILES_GRAMMAR.DEFAULT_ENCODING).toBe('utf-8');
+    expect([...FILES_GRAMMAR.ENCODINGS]).toEqual(['utf-8', 'base64']);
+
+    // …and the field's own description must teach that grammar, because for a
+    // `usableAsTool` node this text IS the tool catalogue an LLM reads. A
+    // description that drifted from the parser would produce tool calls the
+    // node then refuses.
+    const files = node.description.properties.find((p) => p.name === 'files');
+    const description = String(files?.description);
+    for (const token of [FILES_GRAMMAR.PATH, FILES_GRAMMAR.CONTENT, ...FILES_GRAMMAR.ENCODINGS]) {
+      expect(description).toContain(token);
+    }
+  });
+
+  it('offers exactly the three documented input modes', () => {
+    // The selector that replaced 0.x's `binaryData` boolean. Pinned like the
+    // operation catalogue and for the same reason: a renamed value reaches a
+    // saved workflow as a mode that no longer resolves.
+    const input = node.description.properties.find((p) => p.name === 'input');
+    expect(((input?.options ?? []) as INodePropertyOptions[]).map((o) => o.value)).toEqual([
+      'binary',
+      'files',
+      'text',
+    ]);
+    expect(input?.default).toBe('binary');
   });
 
   it('warns the agent before every destructive operation', () => {
