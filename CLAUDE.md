@@ -696,6 +696,28 @@ The default tier mocks `helpers.request` and `helpers.httpRequestWithAuthenticat
 - **`tests/contract.test.ts`** — the fences (see "The sandbox contract"). They hold what a percentage cannot: restated platform values, the operation catalogue, the published README, and the built artifact's imports.
 - **`tests/live.test.ts`** — the same `execute()` against a real API, opt-in via `SHIP_API_URL`. It is the only tier that can observe the platform rather than the node's self-consistency, and it is what proved the `/tokens/agent` deletion, the claim/expiry pass-through, `via` landing in the database, and the deploy-token 401.
 
+**Running it needs both credential tiers, and the deploy token is MINTED for
+the run.** `SHIP_TOKEN` is the dev API key from `~/.shiprc-dev` (read under the
+credential-reader law: `JSON.parse(readFileSync(...))`, never `require()`,
+never echo a value). `SHIP_DEPLOY_TOKEN` is minted through `POST /tokens` on
+dev with a short `ttl` and a `n8n-live-walk` label, and deleted when the run
+ends — so no long-lived scratch credential accumulates.
+
+That mint does NOT contradict the "no `tokens` operations" refusal below. That
+refusal governs **the node's operation surface** — what an agent driving this
+node is handed, where the rule is that a credential is configured by a human
+and never minted by the thing that would then hold it. A test harness creating
+a scoped, short-lived credential on a dev account and destroying it afterwards
+is a different act with a different blast radius. The two only look alike.
+
+**What the live tier taught that a mock cannot: HTML is rewritten in transit.**
+The router adds an immutable-cache buster to asset URLs, so a deployed
+`<img src="pixel.gif">` is served as `pixel.gif?_ship=…`. A deployed file is
+not necessarily a byte-identical served file — which is why the files-mode row
+asserts CONTENT for the HTML and byte equality only for the binary, where
+nothing rewrites. The first version of that row asserted byte equality on the
+HTML and failed on precisely this.
+
 The branch ratchet is 98.2 for exactly the implicit `else` arms on the `operation` chains in `execute()`, unreachable because n8n only ever passes a value from the `options` array it rendered. Named in `vitest.config.ts`, not rounded away.
 
 ### Organization
