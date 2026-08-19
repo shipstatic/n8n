@@ -72,6 +72,18 @@ export default defineConfig({
        * 98.62 → 98.64 with the attached-but-empty credential refusal
        * (219/222), same three arms.
        *
+       * 98.64 → 98.63 (217/220) with the `runOperation` extraction, and this
+       * one is a DIP rather than a raise — the second in this file's history,
+       * and the same cause as the first. Extracting the dispatch let the
+       * strict path drop its try/catch entirely (a bare re-throw is refused by
+       * the verification scanner's ruleset, which ignores inline disables), so
+       * two COVERED branches disappeared: the per-item `continueOnFail` check
+       * and the `instanceof` guard that used to attach `itemIndex` at the
+       * catch. The uncovered set did not move — still exactly those three
+       * `else` arms, now living inside `runOperation`. Lowering the number
+       * while the invariant holds is the ratchet's own rule, not an exception
+       * to it: the enumerated arms are the claim.
+       *
        * NOTE: thresholds catch coverage DECAY. They cannot catch a test that
        * asserts nothing; a tautology neither raises nor lowers coverage. The
        * fences in `tests/contract.test.ts` are what hold the contracts a
@@ -79,7 +91,7 @@ export default defineConfig({
        */
       thresholds: {
         statements: 100,
-        branches: 98.64,
+        branches: 98.63,
         functions: 100,
         lines: 100,
       },

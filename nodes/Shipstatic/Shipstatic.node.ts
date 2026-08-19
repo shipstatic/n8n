@@ -8,6 +8,7 @@ import type {
   INodeProperties,
   INodeType,
   INodeTypeDescription,
+  IPairedItemData,
   JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
@@ -208,10 +209,23 @@ function readWireError(error: unknown): WireError | undefined {
 // would mean parsing the same body twice from two different wrappers.
 const WIRE = Symbol.for('shipstatic.wire');
 
-function apiError(ctx: IExecuteFunctions, error: unknown, options?: object): NodeApiError {
+function apiError(
+  ctx: IExecuteFunctions,
+  error: unknown,
+  options?: object,
+  itemIndex?: number,
+): NodeApiError {
   const wrapped = new NodeApiError(ctx.getNode(), error as JsonObject, options);
   const wire = readWireError(error);
   if (wire) (wrapped as unknown as Record<symbol, unknown>)[WIRE] = wire;
+  // Set EXPLICITLY rather than via the constructor's `options.itemIndex`.
+  // `NodeApiError` honours that option in the CJS build and drops it in the
+  // ESM one vitest loads — measured, 2026-08-19 — and a field n8n's error UI
+  // reads should not depend on which build resolved. Assigning here also keeps
+  // the assignment OUT of a catch site, which is what let the re-throw go.
+  if (itemIndex !== undefined) {
+    wrapped.context = { ...wrapped.context, itemIndex };
+  }
   return wrapped;
 }
 
@@ -238,6 +252,10 @@ async function apiRequest(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: object,
+  // Which input item this call belongs to. Attached to the error AT BIRTH
+  // rather than at a catch site, so n8n's UI can highlight the failing item
+  // without anyone re-throwing — see `runOperation` for why no catch exists.
+  itemIndex?: number,
 ): Promise<IDataObject> {
   try {
     return await ctx.helpers.httpRequestWithAuthentication.call(ctx, 'shipstaticApi', {
@@ -247,7 +265,7 @@ async function apiRequest(
       json: true,
     });
   } catch (error) {
-    throw apiError(ctx, error);
+    throw apiError(ctx, error, undefined, itemIndex);
   }
 }
 
@@ -271,6 +289,7 @@ async function fetchList(
   path: string,
   collection: string,
   limit?: number,
+  itemIndex?: number,
 ): Promise<IDataObject[]> {
   const items: IDataObject[] = [];
   let cursor: string | undefined;
@@ -281,7 +300,13 @@ async function fetchList(
     if (cursor) query.set('cursor', cursor);
     const qs = query.toString();
 
-    const response = await apiRequest(ctx, 'GET', qs ? `${path}?${qs}` : path);
+    const response = await apiRequest(
+      ctx,
+      'GET',
+      qs ? `${path}?${qs}` : path,
+      undefined,
+      itemIndex,
+    );
     const page = (response[collection] ?? []) as IDataObject[];
     items.push(...page);
 
@@ -677,6 +702,182 @@ async function handleDeploy(
       pairedItem: items.map((_, i) => ({ item: i })),
     },
   ];
+}
+
+/**
+ * One item through the resource/operation dispatch, returning what it
+ * produced rather than pushing into a shared array.
+ *
+ * Extracted so `execute()` can run it WITHOUT a try/catch on the strict
+ * path. The natural shape — one try whose `else` re-throws — trips
+ * `require-node-api-error`, which cannot tell a re-throw of an
+ * already-typed error from a raw one, and the inline disable that used to
+ * silence it is void where it matters: n8n's verification scanner runs
+ * eslint with `allowInlineConfig: false`. Wrapping instead would nest a
+ * typed error inside another and degrade the message a user reads, so the
+ * error is simply never caught when it is going to be re-thrown.
+ */
+async function runOperation(
+  ctx: IExecuteFunctions,
+  resource: string,
+  operation: string,
+  i: number,
+  pairedItem: IPairedItemData | IPairedItemData[],
+): Promise<INodeExecutionData[]> {
+  const out: INodeExecutionData[] = [];
+  if (resource === 'deployment') {
+    if (operation === 'list') {
+      const returnAll = ctx.getNodeParameter('returnAll', 0) as boolean;
+      const limit = returnAll ? undefined : (ctx.getNodeParameter('limit', 0) as number);
+      // `cursor` is deliberately absent from the item json: returnAll and
+      // limit ARE n8n's pagination abstraction, and handing a workflow a
+      // cursor it has no way to feed back would be a second, broken one.
+      for (const deployment of await fetchList(ctx, '/deployments', 'deployments', limit, i)) {
+        out.push({ json: toJson(deployment), pairedItem });
+      }
+    } else if (operation === 'get') {
+      const id = ctx.getNodeParameter('deployment', i, '', {
+        extractValue: true,
+      }) as string;
+      const result = await apiRequest(
+        ctx,
+        'GET',
+        `/deployments/${encodeURIComponent(id)}`,
+        undefined,
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'set') {
+      const id = ctx.getNodeParameter('deployment', i, '', {
+        extractValue: true,
+      }) as string;
+      const labelValues = parseLabels(ctx.getNodeParameter('labels', i) as string) ?? [];
+      const result = await apiRequest(
+        ctx,
+        'PATCH',
+        `/deployments/${encodeURIComponent(id)}`,
+        {
+          labels: labelValues,
+        },
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'delete') {
+      const id = ctx.getNodeParameter('deployment', i, '', {
+        extractValue: true,
+      }) as string;
+      // The acknowledgement is the output, verbatim. The API answers
+      // 202 with `{ deployment, status: 'deleting' }` — the row states
+      // the plan it is transitioning through, and a workflow branching
+      // on the deletion is the caller most able to act on that. A
+      // fabricated `{ success: true }` would throw it away.
+      const result = await apiRequest(
+        ctx,
+        'DELETE',
+        `/deployments/${encodeURIComponent(id)}`,
+        undefined,
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    }
+  } else if (resource === 'domain') {
+    // All domain ops read the same `domain` resource locator.
+    const name = ctx.getNodeParameter('domain', i, '', {
+      extractValue: true,
+    }) as string;
+
+    if (operation === 'set') {
+      const domainOptions = ctx.getNodeParameter('options', i) as IDataObject;
+      // Merge-upsert semantics: omitted keys preserve, present keys update.
+      // Empty Labels (added but blank) clears — same shape as Deployment Set.
+      const body: IDataObject = {};
+      const linkedDeployment = extractResourceLocatorValue(domainOptions.deployment);
+      if (linkedDeployment) body.deployment = linkedDeployment;
+      if (domainOptions.labels !== undefined) {
+        body.labels = parseLabels(domainOptions.labels as string) ?? [];
+      }
+      const result = await apiRequest(ctx, 'PUT', `/domains/${encodeURIComponent(name)}`, body, i);
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'list') {
+      const returnAll = ctx.getNodeParameter('returnAll', 0) as boolean;
+      const limit = returnAll ? undefined : (ctx.getNodeParameter('limit', 0) as number);
+      for (const domain of await fetchList(ctx, '/domains', 'domains', limit, i)) {
+        out.push({ json: toJson(domain), pairedItem });
+      }
+    } else if (operation === 'get') {
+      const result = await apiRequest(
+        ctx,
+        'GET',
+        `/domains/${encodeURIComponent(name)}`,
+        undefined,
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'records') {
+      const result = await apiRequest(
+        ctx,
+        'GET',
+        `/domains/${encodeURIComponent(name)}/records`,
+        undefined,
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'dns') {
+      const result = await apiRequest(
+        ctx,
+        'GET',
+        `/domains/${encodeURIComponent(name)}/dns`,
+        undefined,
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'share') {
+      const result = await apiRequest(
+        ctx,
+        'GET',
+        `/domains/${encodeURIComponent(name)}/share`,
+        undefined,
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'validate') {
+      const result = await apiRequest(
+        ctx,
+        'POST',
+        '/domains/validate',
+        {
+          domain: name,
+        },
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'verify') {
+      const result = await apiRequest(
+        ctx,
+        'POST',
+        `/domains/${encodeURIComponent(name)}/verify`,
+        undefined,
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    } else if (operation === 'delete') {
+      // Same law as the deployment delete: the wire's acknowledgement
+      // IS the output. `{ domain }` at 200 — the domain is gone when
+      // the call returns, which is why this one carries no state.
+      const result = await apiRequest(
+        ctx,
+        'DELETE',
+        `/domains/${encodeURIComponent(name)}`,
+        undefined,
+        i,
+      );
+      out.push({ json: toJson(result), pairedItem });
+    }
+  } else if (resource === 'account') {
+    const result = await apiRequest(ctx, 'GET', '/account', undefined, i);
+    out.push({ json: toJson(result), pairedItem });
+  }
+  return out;
 }
 
 export class Shipstatic implements INodeType {
@@ -1255,22 +1456,32 @@ export class Shipstatic implements INodeType {
         );
       }
 
+      // **No try/catch on the strict path, deliberately.** The obvious shape is
+      // one try whose `else` re-throws — and a bare `throw error` is refused by
+      // `require-node-api-error`, which cannot see that the value is already a
+      // NodeApiError. An inline disable does not help: n8n's verification
+      // scanner runs eslint with `allowInlineConfig: false` (measured — a
+      // published beta failed the scan on a line whose disable was present).
+      //
+      // Wrapping instead would be worse than the lint it silences: nesting a
+      // typed error inside `new NodeApiError(...)` degrades the message the
+      // user reads and strands the wire fields `errorItem` recovers. So the
+      // error is simply never caught when it is going to be re-thrown.
+      if (!this.continueOnFail()) {
+        returnData.push(...(await handleDeploy(this, items, token)));
+        return [returnData];
+      }
+
       try {
-        const results = await handleDeploy(this, items, token);
-        returnData.push(...results);
+        returnData.push(...(await handleDeploy(this, items, token)));
       } catch (error) {
-        if (this.continueOnFail()) {
-          // Deploy consumes every input item into one upload, so the error
-          // must trace back to all of them — same pairedItem shape as the
-          // success path inside handleDeploy.
-          returnData.push({
-            json: errorItem(error),
-            pairedItem: items.map((_, idx) => ({ item: idx })),
-          });
-        } else {
-          // eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- a RE-throw, not a raw one: `handleDeploy` only ever throws NodeApiError (via `apiError`) or NodeOperationError. Wrapping again would nest a typed error inside itself and lose the wire fields `errorItem` reads back.
-          throw error;
-        }
+        // Deploy consumes every input item into one upload, so the error must
+        // trace back to all of them — same pairedItem shape as the success
+        // path inside handleDeploy.
+        returnData.push({
+          json: errorItem(error),
+          pairedItem: items.map((_, idx) => ({ item: idx })),
+        });
       }
       return [returnData];
     }
@@ -1296,141 +1507,20 @@ export class Shipstatic implements INodeType {
     const iterations = isGlobalOp ? 1 : items.length;
     const globalPairedItem = items.map((_, idx) => ({ item: idx }));
 
+    // `continueOnFail` is constant for the execution, so the branch is hoisted
+    // out of the loop: the tolerant path catches, the strict path never does.
+    const tolerant = this.continueOnFail();
+
     for (let i = 0; i < iterations; i++) {
       const pairedItem = isGlobalOp ? globalPairedItem : { item: i };
+      if (!tolerant) {
+        returnData.push(...(await runOperation(this, resource, operation, i, pairedItem)));
+        continue;
+      }
       try {
-        if (resource === 'deployment') {
-          if (operation === 'list') {
-            const returnAll = this.getNodeParameter('returnAll', 0) as boolean;
-            const limit = returnAll ? undefined : (this.getNodeParameter('limit', 0) as number);
-            // `cursor` is deliberately absent from the item json: returnAll and
-            // limit ARE n8n's pagination abstraction, and handing a workflow a
-            // cursor it has no way to feed back would be a second, broken one.
-            for (const deployment of await fetchList(this, '/deployments', 'deployments', limit)) {
-              returnData.push({ json: toJson(deployment), pairedItem });
-            }
-          } else if (operation === 'get') {
-            const id = this.getNodeParameter('deployment', i, '', {
-              extractValue: true,
-            }) as string;
-            const result = await apiRequest(this, 'GET', `/deployments/${encodeURIComponent(id)}`);
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'set') {
-            const id = this.getNodeParameter('deployment', i, '', {
-              extractValue: true,
-            }) as string;
-            const labelValues = parseLabels(this.getNodeParameter('labels', i) as string) ?? [];
-            const result = await apiRequest(
-              this,
-              'PATCH',
-              `/deployments/${encodeURIComponent(id)}`,
-              { labels: labelValues },
-            );
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'delete') {
-            const id = this.getNodeParameter('deployment', i, '', {
-              extractValue: true,
-            }) as string;
-            // The acknowledgement is the output, verbatim. The API answers
-            // 202 with `{ deployment, status: 'deleting' }` — the row states
-            // the plan it is transitioning through, and a workflow branching
-            // on the deletion is the caller most able to act on that. A
-            // fabricated `{ success: true }` would throw it away.
-            const result = await apiRequest(
-              this,
-              'DELETE',
-              `/deployments/${encodeURIComponent(id)}`,
-            );
-            returnData.push({ json: toJson(result), pairedItem });
-          }
-        } else if (resource === 'domain') {
-          // All domain ops read the same `domain` resource locator.
-          const name = this.getNodeParameter('domain', i, '', {
-            extractValue: true,
-          }) as string;
-
-          if (operation === 'set') {
-            const domainOptions = this.getNodeParameter('options', i) as IDataObject;
-            // Merge-upsert semantics: omitted keys preserve, present keys update.
-            // Empty Labels (added but blank) clears — same shape as Deployment Set.
-            const body: IDataObject = {};
-            const linkedDeployment = extractResourceLocatorValue(domainOptions.deployment);
-            if (linkedDeployment) body.deployment = linkedDeployment;
-            if (domainOptions.labels !== undefined) {
-              body.labels = parseLabels(domainOptions.labels as string) ?? [];
-            }
-            const result = await apiRequest(
-              this,
-              'PUT',
-              `/domains/${encodeURIComponent(name)}`,
-              body,
-            );
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'list') {
-            const returnAll = this.getNodeParameter('returnAll', 0) as boolean;
-            const limit = returnAll ? undefined : (this.getNodeParameter('limit', 0) as number);
-            for (const domain of await fetchList(this, '/domains', 'domains', limit)) {
-              returnData.push({ json: toJson(domain), pairedItem });
-            }
-          } else if (operation === 'get') {
-            const result = await apiRequest(this, 'GET', `/domains/${encodeURIComponent(name)}`);
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'records') {
-            const result = await apiRequest(
-              this,
-              'GET',
-              `/domains/${encodeURIComponent(name)}/records`,
-            );
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'dns') {
-            const result = await apiRequest(
-              this,
-              'GET',
-              `/domains/${encodeURIComponent(name)}/dns`,
-            );
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'share') {
-            const result = await apiRequest(
-              this,
-              'GET',
-              `/domains/${encodeURIComponent(name)}/share`,
-            );
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'validate') {
-            const result = await apiRequest(this, 'POST', '/domains/validate', {
-              domain: name,
-            });
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'verify') {
-            const result = await apiRequest(
-              this,
-              'POST',
-              `/domains/${encodeURIComponent(name)}/verify`,
-            );
-            returnData.push({ json: toJson(result), pairedItem });
-          } else if (operation === 'delete') {
-            // Same law as the deployment delete: the wire's acknowledgement
-            // IS the output. `{ domain }` at 200 — the domain is gone when
-            // the call returns, which is why this one carries no state.
-            const result = await apiRequest(this, 'DELETE', `/domains/${encodeURIComponent(name)}`);
-            returnData.push({ json: toJson(result), pairedItem });
-          }
-        } else if (resource === 'account') {
-          const result = await apiRequest(this, 'GET', '/account');
-          returnData.push({ json: toJson(result), pairedItem });
-        }
+        returnData.push(...(await runOperation(this, resource, operation, i, pairedItem)));
       } catch (error) {
-        if (this.continueOnFail()) {
-          returnData.push({ json: errorItem(error), pairedItem });
-          continue;
-        }
-        // Attach the input item index so n8n's error UI can highlight which
-        // item caused the failure. Standard n8n core node pattern.
-        if (error instanceof NodeApiError || error instanceof NodeOperationError) {
-          error.context = { ...error.context, itemIndex: i };
-        }
-        // eslint-disable-next-line @n8n/community-nodes/require-node-api-error -- a RE-throw of the error the line above just annotated with its itemIndex. Every throw reaching here came from `apiRequest`/`apiError` already typed; re-wrapping would discard the context that was just attached.
-        throw error;
+        returnData.push({ json: errorItem(error), pairedItem });
       }
     }
 

@@ -848,6 +848,33 @@ describe('Deploy — idempotency', () => {
 // Deploy — error handling (handleDeploy failure paths)
 // =============================================================================
 
+describe('Per-item error attribution', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('a failing per-item operation carries its itemIndex', async () => {
+    // n8n's error UI highlights which input item failed, and this is what
+    // feeds it. UNTESTED until 2026-08-19, which is exactly how it went
+    // missing: a refactor removed the `error.context.itemIndex` assignment and
+    // all 175 tests stayed green. It is attached at the error's BIRTH now
+    // (`apiRequest` takes the index) rather than at a catch site, because the
+    // catch that used to do it had to go — a bare re-throw is refused by the
+    // verification scanner's ruleset, which ignores inline disables.
+    const ctx = createContext({
+      resource: 'deployment',
+      operation: 'get',
+      deployment: { __rl: true, mode: 'id', value: 'x.shipstatic.com' },
+    });
+    ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }]);
+    ctx.helpers.httpRequestWithAuthentication
+      .mockResolvedValueOnce({ deployment: 'ok' })
+      .mockRejectedValueOnce(Object.assign(new Error('boom'), { httpCode: '404' }));
+
+    const error: any = await node.execute.call(ctx).catch((e: unknown) => e);
+
+    expect(error.context?.itemIndex).toBe(1);
+  });
+});
+
 describe('Deploy — error handling', () => {
   beforeEach(() => vi.clearAllMocks());
 
