@@ -93,6 +93,43 @@ row fence (loud, live-proven — a wrong field name fails every deploy on its
 first try) and a credential-placeholder prefix fence (a prefix change is a
 deliberate platform-wide break, never drift).
 
+### The two floors, both MEASURED (2026-08-19)
+
+Neither number was chosen; both were probed, and the probe found the pair
+contradicting each other.
+
+**`n8n-workflow >= 1.83.0` is where the node's code compiles.** The binding
+symbol is `NodeConnectionTypes` — absent at 1.82.0, present at 1.83.0
+(bisected over the published tarballs). The other three requirements
+(`usableAsTool`, listSearch `paginationToken`, `resourceLocator`) are all
+older. Typecheck AT that floor: **0 errors.** The suite cannot RUN there —
+vitest fails to resolve the package entry, because 1.83.0 predates the exports
+map it needs — which is a harness limit, not a node-code one, and is why the
+claim is scoped to "compiles" rather than "passes".
+
+Mapped to what users install: n8n 1.84.0 carried n8n-workflow 1.82.0 and n8n
+1.85.0 carried 1.83.0, so the code floor is **n8n >= 1.85.0**.
+
+**`engines.node` was `>=22.16` and it was wrong** — not stale, incoherent. n8n
+1.85 through the 1.x line declare `>=18.17 <= 22`, so a floor of 22.16
+**excluded every host the code floor claims to support**. It is `>=20.19` now,
+and that number does two jobs at once without being a compromise: it is n8n
+2.0.0's own `engines.node`, and it is the estate's published-package floor.
+Measured, coinciding — not chosen to satisfy both.
+
+**Support is declared at n8n 2.x, which is narrower than what compiles.** The
+distinction is deliberate: 1.85 is where the code would work, 2.x is what the
+suite runs against and what n8n Cloud serves. Claiming the wider range would be
+claiming something untested. Recorded so the next reader does not "fix" the
+engines value back toward the compile floor.
+
+**`peerDependencies` stays `"*"` for now.** Narrowing it is the one half of
+this that is genuinely a T6 question: `"*"` is what n8n's own scaffolding
+emits, and a narrowed range may trip the community-package verification
+scanner or the installer. It resolves when that scanner actually runs (T6.4).
+Until then the floor lives in prose — knowingly, with this sentence as the
+record that it lacks a mechanism.
+
 ### The verification ruleset is a MOVING contract — pin it, but walk the pin
 
 `@n8n/node-cli` is exact-pinned (the artifact-tool law: it emits the published

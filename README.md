@@ -2,6 +2,11 @@
 
 n8n community node for [ShipStatic](https://shipstatic.com) — deploy static websites, landing pages, and prototypes instantly from n8n workflows.
 
+## Requirements
+
+**Requires n8n 2.0 or newer** (Node.js 20.19+). The node's code compiles as far
+back as n8n 1.85, but 2.x is what it is tested against and what n8n Cloud runs.
+
 ## Installation
 
 In your n8n instance, go to **Settings > Community Nodes** and install:
