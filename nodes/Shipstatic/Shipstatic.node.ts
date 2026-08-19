@@ -1461,7 +1461,7 @@ export class Shipstatic implements INodeType {
           'ShipStatic credential is attached but its Token field is empty',
           {
             description:
-              'Open the credential and paste an API key (ship-…) or a deploy token (deploy-…). Upgrading from the 0.x node? It stored the value in an "API Key" field that 1.x no longer reads — re-enter it in Token. To deploy anonymously instead, remove the credential from this node.',
+              'Open the credential and paste your API key (ship-…). Upgrading from the 0.x node? It stored the value in an "API Key" field that 1.x no longer reads — re-enter it in Token. To deploy anonymously instead, remove the credential from this node.',
           },
         );
       }
@@ -1505,7 +1505,7 @@ export class Shipstatic implements INodeType {
         'This operation requires ShipStatic credentials.',
         {
           description:
-            'Open Credentials → New → ShipStatic API and paste an API key. Get a free key at https://my.shipstatic.com/api-key. A deploy token (deploy-…) is deploy-scoped — it can run Deploy, but not this operation.',
+            'Open Credentials → New → ShipStatic API and paste your API key. Get a free key at https://my.shipstatic.com/api-key.',
         },
       );
     }

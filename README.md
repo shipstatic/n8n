@@ -115,17 +115,9 @@ For permanent deployments and full control over your sites and domains, add a fr
 
 ### One credential slot
 
-The **Token** field takes either kind of ShipStatic credential, and the server
-tells them apart by their shape — there is nothing to select:
-
-| Value | What it can do |
-| ----- | -------------- |
-| `ship-…` **API key** | Every operation in this node |
-| `deploy-…` **deploy token** | Deploy only — it is deploy-scoped by design |
-
-A deploy token will **fail the credential connection test**, which checks
-account access. That is expected rather than a broken credential: use one for
-deploy-only workflows, and an API key for everything else.
+The field is called **Token** and your API key is what goes in it — one
+credential, two names. Paste a `ship-…` key and every operation in this node
+works; n8n verifies the connection when you save.
 
 ### Listing
 
@@ -224,7 +216,7 @@ and its keyless deploy no longer works at all. Upgrading is worth it, and it
 changes four things in saved workflows:
 
 1. **Re-enter your credential.** The field is now a single **Token** slot that
-   takes either an API key or a deploy token. A credential created for 0.x
+   takes your API key. A credential created for 0.x
    stored its value in an "API Key" field that 1.x does not read — the node
    refuses to deploy rather than silently falling back to an anonymous public
    deployment, so you will see a clear error until you re-enter it.

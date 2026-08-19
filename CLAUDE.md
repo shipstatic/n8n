@@ -504,6 +504,45 @@ SDK uses, so client and server cannot disagree on dispatch. The credential TYPE
 id stays `shipstaticApi`: it names the platform, and renaming it would orphan
 every stored credential.
 
+### The capability stays; the promotion goes (operator decision, 2026-08-19)
+
+**Deploy tokens are no longer ADVERTISED anywhere in this node.** Nothing about
+the capability changed — the slot accepts either population, the server
+classifies, no code path blocks one, and `tests/live.test.ts` still deploys
+with a `deploy-` token every run. What changed is what the node says first.
+
+**Every PROACTIVE surface names the API key alone**: the placeholder, the
+credential description, the upgrade guard's message, the auth-gate hint for
+credential-less account operations, and the README. These fire *before* a user
+has a credential, so they are the node choosing which population to recommend
+— and recommending one is simpler than teaching a taxonomy to someone who just
+wants the node to work.
+
+**Exactly one REACTIVE mention survives, and the asymmetry is the whole
+point**: the credential test's 401 rule message. It fires only for someone who
+already holds a deploy token and has just been refused, the API's 401 for a
+deploy token is deliberately byte-identical to one for a garbage credential
+(scope is not leaked), and that message is therefore the ONLY place such a user
+can learn the failure is by design rather than a broken key. Removing it would
+strip the one surface that can tell them.
+
+Mirrors the hosted MCP's recorded precedent: any platform bearer works there
+too, and no public surface says so.
+
+**Fenced by inversion, not by deletion.** `tests/contract.test.ts` used to pin
+the two-population copy; it now pins the opposite — placeholder, description,
+the BUILT node artifact and the README must all NOT contain
+`DEPLOY_TOKEN.PREFIX`. (The built artifact rather than the source, because the
+comments explaining this decision legitimately name the prefix and `tsc` strips
+them, so the built file is exactly what a user can read.) All four drilled.
+Re-promotion is therefore a deliberate fence edit and can never be prose
+drifting back.
+
+**Reversal condition:** when the platform starts promoting deploy tokens for
+integrations, restore the two-population copy. The inverted fences make that
+one commit — they go red the moment the copy returns, which is them asking
+whether it was meant.
+
 Deploy attaches `Authorization` only when a token exists. Three boundary rules:
 
 - **No credential ATTACHED is the anonymous door**, and it is the product.
