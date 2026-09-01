@@ -189,6 +189,21 @@ exception you can see from the code it concerns, which disappears when T3
 lands the asset. That placement is the point: a config-level `off` would have
 hidden the very finding that justified making warnings blocking.
 
+### `npm pkg set` deletes this package's most load-bearing field
+
+`dependencies: {}` is not decoration here: the zero-runtime-dependency
+contract is what n8n Cloud verification is judged on, and the manifest
+DECLARING it empty is half of how that contract is read (the other half is
+`tests/contract.test.ts`'s artifact fence over the built bytes). **Any
+`npm pkg set` on this manifest silently drops the empty object** — npm treats
+an empty collection as nothing to write, so a version bump or a description
+edit takes the declaration with it.
+
+It has bitten twice (2026-09-01, the via wave and again the coherence wave),
+and both times the contract test caught it, which is the fence working. The
+rule is therefore not "remember": edit this manifest with a JSON reader that
+preserves it, or re-add the field and let the suite confirm before you commit.
+
 ### No `prepare` script — the one place the estate's hook standard cannot reach
 
 Root `CLAUDE.md`'s tooling standard installs the pre-commit hook with
