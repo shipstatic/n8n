@@ -161,9 +161,14 @@ describe('parseLabels', () => {
 // =============================================================================
 
 describe('stripCommonPrefix', () => {
-  it('returns input unchanged for fewer than two paths', () => {
+  it('never strips a lone path, but still normalizes its separators', () => {
+    // Stripping needs a COMMON prefix, which one path cannot prove. Windows
+    // separator normalization is not stripping, and used to be skipped here:
+    // a single-file binary deploy kept its backslashes, the one path shape
+    // the platform never serves.
     expect(stripCommonPrefix([])).toEqual([]);
     expect(stripCommonPrefix(['solo/file.html'])).toEqual(['solo/file.html']);
+    expect(stripCommonPrefix(['dist\\index.html'])).toEqual(['dist/index.html']);
   });
 
   it('strips a single shared leading directory', () => {
@@ -654,6 +659,15 @@ describe('Deploy — file collection & formData', () => {
     expect(files[0].options.filename).toBe('index.html');
     expect(fd.via).toBe('n8n');
   });
+
+  it('refuses a File Name the files grammar would refuse', async () => {
+    // Text mode's path is WRITTEN, like a files-mode path, so it meets the
+    // same structural check and fails before a wasted upload.
+    for (const fileName of ['../escape.html', '/absolute.html']) {
+      const ctx = createDeployContext({ input: 'text', fileContent: 'hello', fileName });
+      await expect(node.execute.call(ctx)).rejects.toThrow(/File Name is invalid/);
+    }
+  });
 });
 
 // =============================================================================
@@ -690,6 +704,9 @@ describe('Deploy — SPA routing', () => {
     expect(JSON.parse(config.value.toString())).toEqual({
       rewrites: [{ source: '/(.*)', destination: '/index.html' }],
     });
+    // Byte parity with the SDK's generated config: two-space JSON, no
+    // trailing newline. One site, one ship.json, whichever surface deploys.
+    expect(config.value.toString().endsWith('\n')).toBe(false);
   });
 
   it('its checksum rides along — the API verifies every file', async () => {
