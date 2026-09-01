@@ -106,9 +106,11 @@ export const DOMAIN_RECORDS = {
   ],
 } satisfies DomainRecordsResponse;
 
+// wire: api/src/lib/domains/utils.ts — the FINISHED setup link,
+// `https://connect.<platform>/<domain>/<hash>`; no client assembles one.
 export const DOMAIN_SHARE = {
   domain: DOMAIN.domain,
-  hash: 'a1b2c3d4e5f6',
+  url: `https://connect.shipstatic.com/${DOMAIN.domain}/a1b2c3d4e5f6`,
 } satisfies DomainShareResponse;
 
 export const DOMAIN_VALID = {
@@ -125,10 +127,17 @@ export const ACCOUNT = {
   name: null,
   picture: null,
   plan: 'free',
-  usage: { customDomains: 1 },
+  suspended: false,
+  usage: { deployments: 2, platformDomains: 0, customDomains: 1 },
+  caps: { deployments: 10, platformDomains: 1, customDomains: 1 },
   created: 1785000000,
   activated: 1785000000,
   hint: 'cdef',
-  grace: null,
+  pastDue: false,
+  billed: false,
+  upgrade: null,
+  interval: null,
+  scheduled: null,
+  cancelAt: null,
   authMethod: 'apiKey',
 } satisfies AccountGetResponse;

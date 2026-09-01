@@ -1028,8 +1028,8 @@ export class Shipstatic implements INodeType {
             name: 'Share',
             value: 'share',
             description:
-              'Get a shareable setup hash so someone else can view the required DNS records without an API key',
-            action: 'Get share hash',
+              'Get a shareable setup link so someone else can view the required DNS records without an API key',
+            action: 'Get share link',
           },
           {
             name: 'Validate',

@@ -1,7 +1,7 @@
 {
   "name": "n8n-nodes-shipstatic",
-  "version": "1.0.0-beta.4",
-  "description": "Deploy static sites and HTML pages to a live URL \u2014 free, no account needed",
+  "version": "1.0.0-beta.5",
+  "description": "Deploy static sites and HTML pages to a live URL — free, no account needed",
   "keywords": [
     "n8n-community-node-package",
     "n8n",
@@ -50,12 +50,11 @@
       "dist/nodes/Shipstatic/Shipstatic.node.js"
     ]
   },
-  "dependencies": {},
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
     "@eslint/js": "^9.39.4",
     "@n8n/node-cli": "0.44.2",
-    "@shipstatic/types": "2.12.0-beta.1",
+    "@shipstatic/types": "2.21.0",
     "@vitest/coverage-v8": "4.1.10",
     "eslint": "^9.39.4",
     "typescript": "^6.0.2",
