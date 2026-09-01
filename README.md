@@ -25,7 +25,7 @@ npm install n8n-nodes-shipstatic
 
 Restart n8n after installing.
 
-## Deploy — Free, No Account Needed
+## Deploy: free, no account needed
 
 Add a **ShipStatic** node to your workflow. No credentials to configure.
 
@@ -105,7 +105,7 @@ original deployment instead of creating a second one:
 Key the *attempt*, never the try — a value stable across retries of one logical
 deploy and different for the next. Leave it empty and every run deploys afresh.
 
-## All Operations — Free API Key
+## All operations: free API key
 
 For permanent deployments and full control over your sites and domains, add a free API key:
 
@@ -160,7 +160,7 @@ completes.
 | ----------- | --------------------------------------------------------- |
 | **Whoami**  | Get your account details including email, plan, and usage |
 
-## Example Workflows
+## Example workflows
 
 ### Publish and connect a custom domain
 
@@ -174,7 +174,7 @@ completes.
 
 Use an n8n **Schedule Trigger** to redeploy a site on a recurring basis — useful for sites that pull content from external sources.
 
-## Picking Deployments and Domains
+## Picking deployments and domains
 
 Deployment and Domain fields use n8n's **Resource Locator** with two modes:
 
@@ -183,7 +183,7 @@ Deployment and Domain fields use n8n's **Resource Locator** with two modes:
 
 You can also switch any field to **Expression** mode to use values from upstream nodes.
 
-## AI Agent Support
+## AI agent support
 
 This node works as a tool in n8n's AI Agent workflows (`usableAsTool: true`).
 Connect it to an AI agent and let it deploy sites, manage domains, and check
@@ -235,9 +235,20 @@ changes four things in saved workflows:
 
 ## Resources
 
-- [ShipStatic Documentation](https://docs.shipstatic.com)
-- [ShipStatic Dashboard](https://my.shipstatic.com)
-- [Report an Issue](https://github.com/shipstatic/n8n/issues)
+- [Documentation](https://docs.shipstatic.com)
+- [Dashboard](https://my.shipstatic.com)
+- [Report an issue](https://github.com/shipstatic/n8n/issues)
+
+## Also available
+
+| Surface | Reach it |
+|---------|----------|
+| **[MCP](https://mcp.shipstatic.com)** | Drop `https://mcp.shipstatic.com` into any MCP client |
+| **[CLI and SDK](https://github.com/shipstatic/ship)** | `npx @shipstatic/ship ./dist` |
+| **[VS Code](https://marketplace.visualstudio.com/items?itemName=shipstatic.shipstatic)** | Search "ShipStatic" in the Marketplace |
+| **[Gemini CLI](https://github.com/shipstatic/plugin)** | `gemini extensions install https://github.com/shipstatic/plugin` |
+| **[GitHub Action](https://github.com/shipstatic/action)** | `shipstatic/action@v2` |
+| **[Agent Skill](https://www.shipstatic.com/SKILL.md)** | One file, for any skills-aware tool |
 
 ## License
 
