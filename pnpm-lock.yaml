@@ -22,8 +22,8 @@ importers:
         specifier: 0.44.2
         version: 0.44.2(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.58.2)(deepmerge@4.3.1)(dotenv@17.4.1)(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(zod@3.25.76))(@ibm-cloud/watsonx-ai@1.7.9)(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(@typescript-eslint/utils@8.58.1(eslint@9.39.4(jiti@2.6.1))(typescript@6.0.2))(eslint@9.39.4(jiti@2.6.1))(ibm-cloud-sdk-core@5.4.8)(ignore@7.0.5)(jsonwebtoken@9.0.3)(n8n-workflow@2.12.0)(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(playwright@1.58.2)(typescript@6.0.2)(ws@8.20.0)
       '@shipstatic/types':
-        specifier: 2.21.0
-        version: 2.21.0
+        specifier: 2.22.0-beta.2
+        version: 2.22.0-beta.2
       '@vitest/coverage-v8':
         specifier: 4.1.10
         version: 4.1.10(vitest@4.1.10)
@@ -1065,8 +1065,8 @@ packages:
     resolution: {integrity: sha512-rzegZjMFFgCp3o+N8+XU13rfSvz4B+f8rU0ijBGrQcHdMNyfsFDTu1UTm262JofmrV2u+s+D0u0vFTnqtOGkbA==}
     engines: {node: '>=18'}
 
-  '@shipstatic/types@2.21.0':
-    resolution: {integrity: sha512-ZiFOSQ0zAUOo1nScU6ZjpQnkOyM0lu1WchgN3Jixh/Q4WG2/uK8kmLosHMt+d7d3Ob/poDkIT7uAAD25XsVj0w==}
+  '@shipstatic/types@2.22.0-beta.2':
+    resolution: {integrity: sha512-kihp917lV4Vq3ZS1bi/tCfQoxIg4tW+g+eTrqpGFzgw0jvyZsp+/stZiAi7DFBVAAkvjVYc1gVzoQKEkFD1g9w==}
     engines: {node: '>=20.19.0'}
 
   '@so-ric/colorspace@1.1.6':
@@ -4457,7 +4457,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@shipstatic/types@2.21.0': {}
+  '@shipstatic/types@2.22.0-beta.2': {}
 
   '@so-ric/colorspace@1.1.6':
     dependencies:
@@ -5406,7 +5406,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.18.0(debug@4.4.3))
+      retry-axios: 2.6.0(axios@1.18.0)
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -6092,7 +6092,7 @@ snapshots:
 
   resolve-pkg-maps@1.0.0: {}
 
-  retry-axios@2.6.0(axios@1.18.0(debug@4.4.3)):
+  retry-axios@2.6.0(axios@1.18.0):
     dependencies:
       axios: 1.18.0(debug@4.4.3)
 
