@@ -438,7 +438,10 @@ a third source cannot be a second boolean:
   becomes one file. Paths built from `binaryData.directory` +
   `binaryData.fileName`. **Common directory prefixes are stripped** — these
   paths carry an accident of where the files sat on a disk.
-- **Text Content**: text + file name directly. Defaults to `index.html`.
+- **Text Content**: text + file name directly. Defaults to `index.html`. The
+  File Name meets the same structural path check as the files grammar (it is
+  likewise a path someone wrote); binary paths stay exempt as machine-derived
+  metadata.
 - **Files (JSON)**: an array of `{ path, content, encoding? }`. The
   agent-native path, and the reason the selector exists.
 
@@ -698,13 +701,17 @@ mirror a React build deployed from a workflow serves 404s on every route but
 `/` — on the ONE surface whose users are least equipped to know that
 `ship.json` is the remedy.
 
-`detectSpa()` mirrors the SDK exactly: `POST /spa-check` (public, no credential
-— verified anonymously against dev), and on `isSPA` append the restated
-`SPA_CONFIG` as `ship.json`. It skips when the user shipped their own config,
-skips when `index.html` is absent or over 100KB, and **continues silently on
-any failure** — detection is an enhancement, never a gate on the deploy. The
-append happens BEFORE formData is built so the config's checksum rides along;
-after it, the API would reject the deploy for a length mismatch.
+`detectSpa()` mirrors the SDK in outcome: `POST /spa-check` (public, no
+credential; verified anonymously against dev), and on `isSPA` append the
+restated `SPA_CONFIG` as `ship.json`, byte-identical with the SDK's own
+generated config. It skips when the user shipped their own config, skips when
+`index.html` is absent, and **continues silently on any failure**; detection
+is an enhancement, never a gate on the deploy. Unlike the SDK it holds NO
+index-size ceiling: `SPA_CHECK_CONSTRAINTS` in `@shipstatic/types` owns that
+number, its docblock names this consumer as needing no copy, and an oversized
+index is answered `isSPA: false` by the server, so the outcome still matches.
+The append happens BEFORE formData is built so the config's checksum rides
+along; after it, the API would reject the deploy for a length mismatch.
 
 ### Option completeness
 

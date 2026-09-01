@@ -75,17 +75,20 @@ export function extractResourceLocatorValue(raw: unknown): string | undefined {
 // Strip the longest leading directory shared by every path. Used to flatten
 // build outputs (e.g. `dist/index.html` + `dist/assets/app.js` → `index.html`
 // + `assets/app.js`) so the deployed URLs match what the user expects.
-// Backslashes are normalized to forward slashes for Windows binary data.
+// Backslashes normalize to forward slashes for Windows binary data at EVERY
+// path count: stripping needs two paths to prove a prefix common, but a lone
+// Windows path is no less Windows for arriving alone.
 export function stripCommonPrefix(paths: string[]): string[] {
-  if (paths.length < 2) return paths;
-  const segments = paths.map((p) => p.replace(/\\/g, '/').split('/'));
+  const normalized = paths.map((p) => p.replace(/\\/g, '/'));
+  if (normalized.length < 2) return normalized;
+  const segments = normalized.map((p) => p.split('/'));
   const minLen = Math.min(...segments.map((s) => s.length));
   let strip = 0;
   for (let i = 0; i < minLen - 1; i++) {
     if (segments.every((s) => s[i] === segments[0][i])) strip++;
     else break;
   }
-  if (strip === 0) return paths.map((p) => p.replace(/\\/g, '/'));
+  if (strip === 0) return normalized;
   return segments.map((s) => s.slice(strip).join('/'));
 }
 
@@ -122,6 +125,10 @@ export const FILES_GRAMMAR = {
  * the grammar is a shape rather than a contract. This is STRUCTURAL validation
  * of the node's own input format — not platform policy, which stays the API's
  * (extensions, sizes, junk files) and relays verbatim.
+ *
+ * Two callers, one rule: the files grammar, and text mode's File Name, both
+ * paths a person or an agent WROTE. Binary paths are exempt as machine-derived
+ * metadata, normalized and prefix-stripped instead.
  */
 function checkDeployPath(path: string): string | undefined {
   if (path.length === 0) return 'is empty';
@@ -378,10 +385,10 @@ async function uploadDeployment(
  * are least equipped to diagnose that, and least likely to know what
  * `ship.json` is.
  *
- * Mirrors the SDK's posture exactly: skip when the user already ships a config,
- * skip when `index.html` is absent or too large to be worth reading, and
- * **continue silently on any failure** — detection is an enhancement, never a
- * gate on the deploy.
+ * Mirrors the SDK's posture in outcome: skip when the user already ships a
+ * config, skip when `index.html` is absent, and **continue silently on any
+ * failure**. Detection is an enhancement, never a gate on the deploy. The one
+ * mechanical difference is the size ceiling, owned and sanctioned below.
  */
 // Restated from `DEPLOYMENT_CONFIG_FILENAME`; fenced against it. It gates both
 // the skip-when-the-user-shipped-one check and the appended filename, so drift
@@ -396,20 +403,22 @@ export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
 export const SPA_CONFIG = { rewrites: [{ source: '/(.*)', destination: '/index.html' }] };
 
 /**
- * **The server classifies; this node does not.** The SDK guards its own call
- * with a 100KB index ceiling, and copying that number here would have put a
- * third copy of an unowned fact in the estate — the API has
- * `DEPLOYMENT.SPA_MAX_INDEX_SIZE`, the SDK an inline literal, and
- * `@shipstatic/types` owns neither, so there is nothing to fence a copy
- * against.
+ * **The server classifies; this node does not.** The index-size ceiling the
+ * SDK skips on has an owner now: `SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES` in
+ * `@shipstatic/types`, which the SDK imports and the API derives its own
+ * bound from. This node still holds no copy, and the posture is sanctioned
+ * by the owner itself: the constant's docblock names this consumer and says
+ * a client that cannot import it needs no size copy at all, because outcome
+ * parity is the server's. (This comment once justified the absence by the
+ * owner's ABSENCE; when types minted the constant, the reason was rewritten
+ * to cite the sanction rather than silently rot.)
  *
- * Not holding the number is stronger than fencing it: a client that never
- * makes the classification decision cannot disagree with the server about it.
- * An oversized index is answered `isSPA: false` gracefully — the outcome is
- * identical, and outcome parity with the SDK is what a user experiences.
- * The cost is one redundant upload of an index the deploy sends anyway, in
- * the uncommon case of a >100KB index.html, bounded by the API's own 5MB
- * body limit.
+ * Not holding the number is stronger than fencing a restated copy: a client
+ * that never makes the classification decision cannot disagree with the
+ * server about it. An oversized index is answered `isSPA: false` gracefully,
+ * so what a user experiences matches the SDK. The cost is one redundant
+ * upload of an index the deploy sends anyway, in the uncommon case of an
+ * index over the ceiling, bounded by the API's own body limit.
  */
 async function detectSpa(
   ctx: IExecuteFunctions,
@@ -647,8 +656,19 @@ async function handleDeploy(
   } else {
     const fileContent = ctx.getNodeParameter('fileContent', 0) as string;
     const fileName = ctx.getNodeParameter('fileName', 0) as string;
+    // A path someone WROTE, like every files-mode path, so it meets the same
+    // structural check and fails before a wasted upload. Binary paths stay
+    // exempt: machine-derived metadata, normalized and stripped above, with
+    // platform policy on them the API's to enforce.
+    const path = fileName || 'index.html';
+    const pathProblem = checkDeployPath(path);
+    if (pathProblem) {
+      throw new NodeOperationError(ctx.getNode(), `File Name is invalid: it ${pathProblem}`, {
+        description: 'Use a relative path like "index.html" or "docs/page.html".',
+      });
+    }
     const content = Buffer.from(fileContent, 'utf-8');
-    files.push({ path: fileName || 'index.html', content, md5: md5(content) });
+    files.push({ path, content, md5: md5(content) });
   }
 
   if (files.length === 0) {
@@ -667,7 +687,9 @@ async function handleDeploy(
     !files.some((f) => f.path === SHIP_JSON) &&
     (await detectSpa(ctx, files, token))
   ) {
-    const content = Buffer.from(`${JSON.stringify(SPA_CONFIG, null, 2)}\n`, 'utf-8');
+    // Byte-identical with the SDK's generated config (no trailing newline),
+    // so one site gets one ship.json whichever surface deploys it.
+    const content = Buffer.from(JSON.stringify(SPA_CONFIG, null, 2), 'utf-8');
     files.push({ path: SHIP_JSON, content, md5: md5(content) });
   }
 

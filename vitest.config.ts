@@ -84,6 +84,12 @@ export default defineConfig({
        * while the invariant holds is the ratchet's own rule, not an exception
        * to it: the enumerated arms are the claim.
        *
+       * 98.63 -> 98.64 (219/222) with the text-mode File Name check and the
+       * lone-path separator normalization: two covered arms in, none out, the
+       * uncovered set still exactly the three `operation` chain `else` arms.
+       * Raised per the ratchet's own rule, or the next regression hides in
+       * the slack this improvement created.
+       *
        * NOTE: thresholds catch coverage DECAY. They cannot catch a test that
        * asserts nothing; a tautology neither raises nor lowers coverage. The
        * fences in `tests/contract.test.ts` are what hold the contracts a
@@ -91,7 +97,7 @@ export default defineConfig({
        */
       thresholds: {
         statements: 100,
-        branches: 98.63,
+        branches: 98.64,
         functions: 100,
         lines: 100,
       },
