@@ -24,6 +24,7 @@ import type { ErrorResponse } from '@shipstatic/types';
 import {
   API_KEY,
   DEFAULT_API,
+  DEPLOY_FILE_GRAMMAR,
   DEPLOY_TOKEN,
   DEPLOYMENT_CONFIG_FILENAME,
   DeploymentVia,
@@ -323,32 +324,14 @@ describe('operation catalogue', () => {
     );
   });
 
-  it('pins the Files (JSON) grammar — a LOCAL pin, and it says so', () => {
-    // **This is a self-consistency pin, not an owner-compare, and the
-    // difference is the whole reason it carries a comment this long.**
-    //
-    // `{ path, content, encoding? }` with a `utf-8` default has THREE holders:
-    // the API's `jsonUploadSchema` (the wire original — same three names, same
-    // two literals, same default), the hosted MCP's `FileSpec` (itself a
-    // restatement of that), and this node. Three holders and silent drift is
-    // exactly what the constellation law's stopping rule promotes, and the
-    // owner is `@shipstatic/types` beside `DEPLOY_FIELDS`, whose MULTIPART half
-    // already lives there — the JSON field names are the member that never got
-    // promoted.
-    //
-    // It is not promoted YET because a constitution change moves as a full
-    // constellation convoy, and the urgent problem is a broken public listing.
-    // Coupling the fix to the convoy inverts the priorities.
-    //
-    // So this fence is honest about being weaker than the ones above it: it
-    // catches a typo inside this repo and CANNOT catch the API changing its
-    // wire names. EXPIRY: when types exports the grammar, this becomes a real
-    // comparison and the local table goes away.
-    expect(FILES_GRAMMAR.PATH).toBe('path');
-    expect(FILES_GRAMMAR.CONTENT).toBe('content');
-    expect(FILES_GRAMMAR.ENCODING).toBe('encoding');
-    expect(FILES_GRAMMAR.DEFAULT_ENCODING).toBe('utf-8');
-    expect([...FILES_GRAMMAR.ENCODINGS]).toEqual(['utf-8', 'base64']);
+  it('holds the Files (JSON) grammar to its owner in @shipstatic/types', () => {
+    // THE OWNER-COMPARE. `@shipstatic/types` exports the Files (JSON) grammar
+    // (DEPLOY_FILE_GRAMMAR) since 2.24.0; the node keeps its own literal table
+    // because n8n Cloud's zero-dependency rule forbids it the import, and this
+    // is the fence that holds the copy to its owner. It replaced a planted
+    // self-consistency pin that could catch a typo here and could not catch
+    // the API renaming a field; this can.
+    expect(FILES_GRAMMAR).toEqual(DEPLOY_FILE_GRAMMAR);
 
     // …and the field's own description must teach that grammar, because for a
     // `usableAsTool` node this text IS the tool catalogue an LLM reads. A
