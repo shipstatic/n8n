@@ -95,17 +95,13 @@ export function stripCommonPrefix(paths: string[]): string[] {
 /**
  * The Files (JSON) grammar, restated.
  *
- * `{ path, content, encoding? }` with `utf-8` as the default has THREE holders:
- * the API's own JSON upload transport (`jsonUploadSchema` in
- * `cloudflare/api/src/lib/upload-input.ts` — the wire original), the hosted
- * MCP's `FileSpec`, and this. The owner-to-be is `@shipstatic/types`, beside
- * `DEPLOY_FIELDS`, whose multipart half already lives there; the promotion
- * rides the next types convoy rather than blocking a broken public listing on
- * a constellation walk.
- *
- * Until then `tests/contract.test.ts` pins these as a LOCAL table, and the plan
- * says so honestly: it is a self-consistency pin, not an owner-compare. The
- * fence flips to a real comparison the day the export exists.
+ * `{ path, content, encoding? }` with `utf-8` as the default is owned by
+ * `@shipstatic/types` (`DEPLOY_FILE_GRAMMAR`, beside `DEPLOY_FIELDS`, the
+ * multipart half). This node cannot import it: n8n Cloud's zero-dependency
+ * rule refuses any import in shipped code, even `import type`. So the table
+ * is restated here as literals and `tests/contract.test.ts` holds it to its
+ * owner with a single `toEqual`; a field the API renames fails that fence,
+ * which is the whole point of the owner existing.
  */
 const FILE_ENCODINGS = ['utf-8', 'base64'] as const;
 type FileEncoding = (typeof FILE_ENCODINGS)[number];
