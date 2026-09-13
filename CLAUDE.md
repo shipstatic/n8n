@@ -821,7 +821,7 @@ source read cannot settle.
 - **Deploy** mentions the claim URL convention and the password-Options affordance. The claim promise is FENCED (`tests/contract.test.ts`) — it is the only way a keyless deployment is ever kept, so an edit that drops it fails the suite.
 - **Deployment Delete / Domain Delete** include "Confirm with the user before calling this — it cannot be undone." A fence in `tests/contract.test.ts` holds both.
 
-This is the n8n-side equivalent of MCP's `You MUST confirm` and `always show the URL/claim` agent hints. The MCP wording is more imperative because MCP-driven agents typically converse with end-users; n8n-driven agents typically pipe results downstream, so the wording is softer. If you add a destructive op, mirror this pattern.
+The MCP servers carry no such sentences since `@shipstatic/mcp` 1.11.0: there, confirmation is the `destructiveHint` annotation's job and the claim relay lives in the server's `instructions`, because both listing reviews reject a tool description that instructs the model. n8n has neither annotations nor instructions, so its operation descriptions are the only place the guidance can live, and it stays here, softly worded because n8n-driven agents typically pipe results downstream. If you add a destructive op, mirror this pattern.
 
 ## Testing
 
