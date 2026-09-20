@@ -2,7 +2,9 @@
 
 Claude Code instructions for the **ShipStatic n8n Community Node**.
 
-**n8n-nodes-shipstatic** — n8n community node for the ShipStatic static hosting platform. Direct HTTP calls to the ShipStatic API — zero runtime dependencies. Published to npm. **Maturity:** v1.x — the 1.x node is the one that speaks to the **2.x platform**. Deployments + Domains (15 operations), optional credentials, n8n Cloud verified.
+**n8n-nodes-shipstatic** — n8n community node for the ShipStatic static hosting platform. Direct HTTP calls to the ShipStatic API — zero runtime dependencies. Published to npm. **Maturity:** v2.x — the 2.x node is the one that speaks to the **3.x platform**. Deployments + Domains (15 operations), optional credentials, n8n Cloud verified.
+
+**2.0.0 (2026-09-20) is a major for a reason this node's own code does not show.** Not one line of `Shipstatic.node.ts` changed: the node passes the wire through, carries zero domain-status literals, and its operations, parameters and credential are untouched. What changed is the JSON a domain operation ANSWERS with. `status` used to be the DNS enum (`pending`, `partial`, `success`) with `paused` glued on; it is now the domain's standing (`live`, `unlinked`, `unverified`, `paused`), and the DNS fact moved to a `verification` field beside it, joined by `verified`, `verifications` and `paused`. A workflow with an IF node branching on `$json.status === 'success'` stops matching, silently, and a passthrough node is exactly where that is hardest to notice. The version is the only warning such a workflow gets, which is why it is a major rather than the patch the diff would suggest.
 
 ## Architecture
 

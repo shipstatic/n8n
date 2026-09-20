@@ -72,15 +72,25 @@ export const DEPLOYMENT_DELETED = {
 
 // ─── Domains ────────────────────────────────────────────────────────────────
 
+/**
+ * A domain that serves. `status` is the STANDING (what the domain needs from
+ * its owner, derived server-side) and `verification` is the DNS fact under
+ * it; a workflow branching on the old `'success'` is exactly what the 2.0.0
+ * major is for.
+ */
 export const DOMAIN = {
   domain: 'www.example.com',
   url: 'https://www.example.com',
+  status: 'live',
   deployment: DEPLOYMENT.deployment,
-  status: 'success',
-  labels: [],
-  created: 1785000000,
   linked: 1785000000,
   links: 1,
+  verification: 'verified',
+  verified: 1785000000,
+  verifications: 1,
+  paused: null,
+  labels: [],
+  created: 1785000000,
 } satisfies Domain;
 
 /** 200, and the row is gone — which is why this one carries no state. */
