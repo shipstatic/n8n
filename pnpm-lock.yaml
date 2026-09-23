@@ -22,8 +22,8 @@ importers:
         specifier: 0.44.2
         version: 0.44.2(@browserbasehq/sdk@2.10.0)(@browserbasehq/stagehand@1.14.0(@playwright/test@1.58.2)(deepmerge@4.3.1)(dotenv@17.4.1)(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(zod@3.25.76))(@ibm-cloud/watsonx-ai@1.7.9)(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.10.0(@opentelemetry/api@1.9.1))(@typescript-eslint/utils@8.58.1(eslint@9.39.4(jiti@2.6.1))(typescript@6.0.2))(eslint@9.39.4(jiti@2.6.1))(ibm-cloud-sdk-core@5.4.8)(ignore@7.0.5)(jsonwebtoken@9.0.3)(n8n-workflow@2.35.1(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(zod@3.25.76))(openai@6.33.0(ws@8.20.0)(zod@3.25.76))(playwright@1.58.2)(typescript@6.0.2)(ws@8.20.0)
       '@shipstatic/types':
-        specifier: 3.1.0
-        version: 3.1.0
+        specifier: 3.2.0-beta.1
+        version: 3.2.0-beta.1
       '@vitest/coverage-v8':
         specifier: 4.1.10
         version: 4.1.10(vitest@4.1.10)
@@ -1052,8 +1052,8 @@ packages:
     resolution: {integrity: sha512-rzegZjMFFgCp3o+N8+XU13rfSvz4B+f8rU0ijBGrQcHdMNyfsFDTu1UTm262JofmrV2u+s+D0u0vFTnqtOGkbA==}
     engines: {node: '>=18'}
 
-  '@shipstatic/types@3.1.0':
-    resolution: {integrity: sha512-0ZzH+sv5f9g5C2z7/VJtWvqgMkdFQLmv6/n4h0vsASFjFNmZGpy+tD5pvldyrVDinW8m/WnM9+lDg+3aKjze8A==}
+  '@shipstatic/types@3.2.0-beta.1':
+    resolution: {integrity: sha512-ty6S0mzGLwYohrEEzjmkipzZiBz64cJVBL8Gfyo+IdHTTuAS5uproLnHIMFHaAmhultey8W2d8mFwg9TqviQ1g==}
     engines: {node: '>=20.19.0'}
 
   '@so-ric/colorspace@1.1.6':
@@ -4394,7 +4394,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@shipstatic/types@3.1.0':
+  '@shipstatic/types@3.2.0-beta.1':
     dependencies:
       zod: 4.6.4
 
@@ -5335,7 +5335,7 @@ snapshots:
       isstream: 0.1.2
       jsonwebtoken: 9.0.3
       mime-types: 2.1.35
-      retry-axios: 2.6.0(axios@1.18.0)
+      retry-axios: 2.6.0(axios@1.18.0(debug@4.4.3))
       tough-cookie: 4.1.4
     transitivePeerDependencies:
       - supports-color
@@ -5991,7 +5991,7 @@ snapshots:
 
   resolve-pkg-maps@1.0.0: {}
 
-  retry-axios@2.6.0(axios@1.18.0):
+  retry-axios@2.6.0(axios@1.18.0(debug@4.4.3)):
     dependencies:
       axios: 1.18.0(debug@4.4.3)
 
