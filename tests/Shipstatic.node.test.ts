@@ -329,16 +329,14 @@ describe('Deploy — authentication', () => {
   it('no token round-trip precedes the deploy — the mint is gone', async () => {
     // The 1.x node minted an agent token through `POST /tokens/agent` before
     // every keyless deploy. The 2.x API deleted that endpoint; the fix was a
-    // deletion, and this proves the deletion took. The SPA check is the only
-    // other call the deploy path makes, and it is unauthenticated by design —
-    // so the requests are ENUMERATED rather than counted. A count would let a
-    // future round-trip slip in behind the same number.
+    // deletion, and this proves the deletion took. The requests are
+    // ENUMERATED rather than counted: a count would let a future round-trip
+    // slip in behind the same number.
     const ctx = createDeployContext({}, null);
 
     await node.execute.call(ctx);
 
     expect(ctx.helpers.request.mock.calls.map((c: any[]) => c[0].uri)).toEqual([
-      'https://api.shipstatic.com/spa-check',
       'https://api.shipstatic.com/deployments',
     ]);
   });
@@ -384,8 +382,7 @@ describe('Deploy — file collection & formData', () => {
     expect(fd.via).toBe('n8n');
     expect(fd.labels).toBe('["prod","v2"]');
     expect(fd.password).toBeUndefined();
-    // /deployments is a pure pipe — integrations must not set spa/build/prerender.
-    expect(fd.spa).toBeUndefined();
+    // /deployments is a pure pipe — integrations must not set build/prerender.
     expect(fd.build).toBeUndefined();
     expect(fd.prerender).toBeUndefined();
   });
@@ -475,20 +472,6 @@ describe('Deploy — file collection & formData', () => {
       'dist/index.html',
       'dist/app.css',
     ]);
-  });
-
-  it('runs SPA detection over files-mode input like every other mode', async () => {
-    const ctx = filesCtx([{ path: 'index.html', content: '<div id="root"></div>' }]);
-    ctx.helpers.request.mockImplementation((opts: any) =>
-      opts.uri?.endsWith('/spa-check')
-        ? Promise.resolve({ isSPA: true })
-        : Promise.resolve({ deployment: 'x.shipstatic.com' }),
-    );
-
-    await node.execute.call(ctx);
-
-    const names = (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
-    expect(names).toContain('ship.json');
   });
 
   it('sends ttl in formData when the option was added', async () => {
@@ -671,163 +654,8 @@ describe('Deploy — file collection & formData', () => {
 });
 
 // =============================================================================
-// Deploy — SPA parity & idempotency
+// Deploy — idempotency
 // =============================================================================
-
-describe('Deploy — SPA routing', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  /** Route the deploy mock: /spa-check answers `isSPA`, /deployments succeeds. */
-  function spaCtx(isSPA: boolean, overrides: Record<string, any> = {}) {
-    const ctx = createDeployContext(overrides);
-    ctx.helpers.request.mockImplementation(async (opts: any) =>
-      opts.uri.endsWith('/spa-check') ? { isSPA } : DEPLOYMENT,
-    );
-    return ctx;
-  }
-
-  const filenames = (ctx: any) =>
-    (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
-
-  it('appends a routing config when the API detects a single-page app', async () => {
-    // Without this, a React build deployed from a workflow serves 404s on
-    // every route but `/` — on the one surface whose users are least equipped
-    // to know that `ship.json` is the remedy.
-    const ctx = spaCtx(true);
-
-    await node.execute.call(ctx);
-
-    expect(filenames(ctx)).toContain('ship.json');
-    const config = (getFormData(ctx)['files[]'] as any[]).find(
-      (f) => f.options.filename === 'ship.json',
-    );
-    expect(JSON.parse(config.value.toString())).toEqual({
-      rewrites: [{ source: '/(.*)', destination: '/index.html' }],
-    });
-    // Byte parity with the SDK's generated config: two-space JSON, no
-    // trailing newline. One site, one ship.json, whichever surface deploys.
-    expect(config.value.toString().endsWith('\n')).toBe(false);
-  });
-
-  it('its checksum rides along — the API verifies every file', async () => {
-    // The config is appended BEFORE formData is built. Were it after, the
-    // API would reject the deploy for a files/checksums length mismatch.
-    const ctx = spaCtx(true);
-
-    await node.execute.call(ctx);
-
-    const fd = getFormData(ctx);
-    expect(JSON.parse(fd.checksums as string)).toHaveLength((fd['files[]'] as any[]).length);
-  });
-
-  it('adds nothing when the app is not a single-page app', async () => {
-    const ctx = spaCtx(false);
-
-    await node.execute.call(ctx);
-
-    expect(filenames(ctx)).not.toContain('ship.json');
-  });
-
-  it('never overrides a config the user shipped themselves', async () => {
-    const ctx = spaCtx(true);
-    ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }]);
-    ctx.helpers.assertBinaryData
-      .mockReturnValueOnce({ fileName: 'index.html' })
-      .mockReturnValueOnce({ fileName: 'ship.json' });
-    ctx.helpers.getBinaryDataBuffer
-      .mockResolvedValueOnce(Buffer.from('<html></html>'))
-      .mockResolvedValueOnce(Buffer.from('{"rewrites":[]}'));
-
-    await node.execute.call(ctx);
-
-    const configs = filenames(ctx).filter((f: string) => f === 'ship.json');
-    expect(configs).toHaveLength(1);
-    // And the check never ran — the user already decided.
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/spa-check')),
-    ).toHaveLength(0);
-  });
-
-  it('the toggle turns it off, and skips the round-trip entirely', async () => {
-    const ctx = spaCtx(true, { options: { spaDetect: false } });
-
-    await node.execute.call(ctx);
-
-    expect(filenames(ctx)).not.toContain('ship.json');
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/spa-check')),
-    ).toHaveLength(0);
-  });
-
-  it('a failed detection never gates the deploy', async () => {
-    // The SDK's own posture: detection is an enhancement. A 500 on /spa-check
-    // must not cost the user their deployment.
-    const ctx = createDeployContext();
-    ctx.helpers.request.mockImplementation(async (opts: any) => {
-      if (opts.uri.endsWith('/spa-check')) throw new Error('detector down');
-      return DEPLOYMENT;
-    });
-
-    const [results] = await node.execute.call(ctx);
-
-    expect(results[0].json).toEqual(DEPLOYMENT);
-    expect(filenames(ctx)).not.toContain('ship.json');
-  });
-
-  it('skips the check when there is no index.html to read', async () => {
-    const ctx = spaCtx(true, {
-      input: 'text',
-      fileContent: 'hello',
-      fileName: 'readme.txt',
-    });
-
-    await node.execute.call(ctx);
-
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/spa-check')),
-    ).toHaveLength(0);
-  });
-
-  it('sends the deployed paths and the index contents, like the SDK does', async () => {
-    const ctx = spaCtx(false);
-
-    await node.execute.call(ctx);
-
-    const check = ctx.helpers.request.mock.calls.find((c: any[]) =>
-      c[0].uri.endsWith('/spa-check'),
-    );
-    expect(check[0].body).toEqual({ files: ['index.html'], index: '<html></html>' });
-  });
-
-  it('presents the credential on the pre-flight, like the SDK does', async () => {
-    // `/spa-check` charges an anonymous caller the public write bucket and
-    // exempts a credentialed one, so probing anonymously with a token in hand
-    // spends a budget the user already paid to avoid. The SDK's client
-    // attaches auth to every request; so does this.
-    const ctx = spaCtx(false);
-
-    await node.execute.call(ctx);
-
-    const check = ctx.helpers.request.mock.calls.find((c: any[]) =>
-      c[0].uri.endsWith('/spa-check'),
-    );
-    expect(check[0].headers.Authorization).toBe('Bearer ship-test');
-  });
-
-  it('probes anonymously when there is no credential to present', async () => {
-    const ctx = createDeployContext({}, null);
-    ctx.helpers.request.mockImplementation(async (opts: any) =>
-      opts.uri.endsWith('/spa-check') ? { isSPA: false } : DEPLOYMENT,
-    );
-
-    await node.execute.call(ctx);
-
-    const check = ctx.helpers.request.mock.calls.find((c: any[]) =>
-      c[0].uri.endsWith('/spa-check'),
-    );
-    expect(check[0].headers.Authorization).toBeUndefined();
-  });
-});
 
 describe('Deploy — idempotency', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -1014,9 +842,7 @@ describe('Deploy — error handling', () => {
       name: 'NodeApiError',
       httpCode: '401',
     });
-    // One DEPLOY attempt. No retry without the header. (The SPA check also
-    // rejects here and is swallowed by design — detection never gates a
-    // deploy — so deploy calls are counted rather than all calls.)
+    // One DEPLOY attempt. No retry without the header.
     expect(
       ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri?.endsWith('/deployments')),
     ).toHaveLength(1);

@@ -370,84 +370,8 @@ async function uploadDeployment(
   }
 }
 
-/**
- * SPA detection — parity with every SDK-riding surface.
- *
- * The SDK's deploy path runs this for the CLI, both MCP transports and the
- * VS Code extension: `POST /spa-check` (public, no credential needed), and on
- * `isSPA` it appends a generated `ship.json` so client-side routes resolve.
- * This node is direct HTTP, so without a mirror a React build deployed from a
- * workflow serves 404s on every route but `/` — on the ONE surface whose users
- * are least equipped to diagnose that, and least likely to know what
- * `ship.json` is.
- *
- * Mirrors the SDK's posture in outcome: skip when the user already ships a
- * config, skip when `index.html` is absent, and **continue silently on any
- * failure**. Detection is an enhancement, never a gate on the deploy. The one
- * mechanical difference is the size ceiling, owned and sanctioned below.
- */
-// Restated from `DEPLOYMENT_CONFIG_FILENAME`; fenced against it. It gates both
-// the skip-when-the-user-shipped-one check and the appended filename, so drift
-// would silently break the SPA mirror's own escape hatch.
-export const SHIP_JSON = 'ship.json';
-
 /** Restated from `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`; fenced against it. */
 export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
-
-// Restated from `SPA_DEFAULT_CONFIG` in `@shipstatic/types` — the zero-import
-// rule forbids reading it, so `tests/contract.test.ts` compares the copies.
-export const SPA_CONFIG = { rewrites: [{ source: '/(.*)', destination: '/index.html' }] };
-
-/**
- * **The server classifies; this node does not.** The index-size ceiling the
- * SDK skips on has an owner now: `SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES` in
- * `@shipstatic/types`, which the SDK imports and the API derives its own
- * bound from. This node still holds no copy, and the posture is sanctioned
- * by the owner itself: the constant's docblock names this consumer and says
- * a client that cannot import it needs no size copy at all, because outcome
- * parity is the server's. (This comment once justified the absence by the
- * owner's ABSENCE; when types minted the constant, the reason was rewritten
- * to cite the sanction rather than silently rot.)
- *
- * Not holding the number is stronger than fencing a restated copy: a client
- * that never makes the classification decision cannot disagree with the
- * server about it. An oversized index is answered `isSPA: false` gracefully,
- * so what a user experiences matches the SDK. The cost is one redundant
- * upload of an index the deploy sends anyway, in the uncommon case of an
- * index over the ceiling, bounded by the API's own body limit.
- */
-async function detectSpa(
-  ctx: IExecuteFunctions,
-  files: { path: string; content: Buffer }[],
-  token: string | undefined,
-) {
-  const index = files.find((f) => f.path === 'index.html');
-  if (!index) return false;
-  try {
-    const response = (await ctx.helpers.request({
-      method: 'POST',
-      uri: `${API}/spa-check`,
-      headers: {
-        'Content-Type': 'application/json',
-        // The credential rides the pre-flight, exactly as the SDK's client
-        // does — it attaches auth to every request, this one included. Not
-        // cosmetic: `/spa-check` charges an ANONYMOUS caller the public write
-        // bucket to bound its AI tier's spend, and exempts a credentialed one
-        // "so the pre-flight never double-charges the deploy it precedes".
-        // Probing anonymously with a token in hand forfeits that exemption and
-        // spends a budget the user already paid to avoid — which surfaces as
-        // SPA routing silently ceasing to work under sustained use, while the
-        // deploys themselves keep succeeding.
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: { files: files.map((f) => f.path), index: index.content.toString('utf-8') },
-      json: true,
-    })) as IDataObject;
-    return response.isSPA === true;
-  } catch {
-    return false;
-  }
-}
 
 // =============================================================================
 // Credential probe — used by listSearch
@@ -674,22 +598,7 @@ async function handleDeploy(
     });
   }
 
-  // 3. SPA parity — append a routing config when the build needs one and the
-  //    user did not ship their own. Runs on the stripped paths because that is
-  //    what the deployment will serve.
-  const spaDetect = options.spaDetect !== false;
-  if (
-    spaDetect &&
-    !files.some((f) => f.path === SHIP_JSON) &&
-    (await detectSpa(ctx, files, token))
-  ) {
-    // Byte-identical with the SDK's generated config (no trailing newline),
-    // so one site gets one ship.json whichever surface deploys it.
-    const content = Buffer.from(JSON.stringify(SPA_CONFIG, null, 2), 'utf-8');
-    files.push({ path: SHIP_JSON, content, md5: md5(content) });
-  }
-
-  // 4. Build formData — after the SPA step, so its checksum rides along
+  // 2. Build formData
   const formData: IDataObject = {
     'files[]': files.map((f) => ({
       value: f.content,
@@ -710,7 +619,7 @@ async function handleDeploy(
   // where `0` is a value the user typed.)
   if (options.ttl !== undefined) formData.ttl = String(options.ttl);
 
-  // 5. Upload — with the token when one is configured, anonymously when not
+  // 3. Upload — with the token when one is configured, anonymously when not
   const idempotencyKey = (options.idempotencyKey as string | undefined)?.trim();
   const result = await uploadDeployment(ctx, formData, token, idempotencyKey);
 
@@ -1321,14 +1230,6 @@ export class Shipstatic implements INodeType {
             default: '',
             description:
               'Password-protect the deployment (6–128 characters; whitespace significant). Visitors must enter this password before viewing the site, including on any custom domains pointing at it.',
-          },
-          {
-            displayName: 'Single-Page App Routing',
-            name: 'spaDetect',
-            type: 'boolean',
-            default: true,
-            description:
-              'Whether to detect a single-page app (React, Vue, Svelte…) and add the routing config it needs, so deep links resolve instead of 404ing. Matches what the CLI and the AI-agent integrations already do. Turn it off, or include your own routing config among the deployed files, to take control.',
           },
           {
             displayName: 'TTL',

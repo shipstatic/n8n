@@ -26,13 +26,11 @@ import {
   DEFAULT_API,
   DEPLOY_FILE_GRAMMAR,
   DEPLOY_TOKEN,
-  DEPLOYMENT_CONFIG_FILENAME,
   DeploymentVia,
   IDEMPOTENCY_KEY_CONSTRAINTS,
   MY_API_KEY_URL,
   PASSWORD_CONSTRAINTS,
   PUBLIC_DEPLOYMENT_TTL_SECONDS,
-  SPA_DEFAULT_CONFIG,
   TTL_CONSTRAINTS,
 } from '@shipstatic/types';
 import type { INodePropertyOptions } from 'n8n-workflow';
@@ -42,9 +40,7 @@ import { API } from '../nodes/Shipstatic/api';
 import {
   FILES_GRAMMAR,
   IDEMPOTENCY_HEADER,
-  SHIP_JSON,
   Shipstatic,
-  SPA_CONFIG,
   VIA,
   type WireError,
 } from '../nodes/Shipstatic/Shipstatic.node';
@@ -159,21 +155,6 @@ describe('restated platform facts', () => {
     // here would cost analytics and fail nowhere. This is the failure.
     expect(VIA).toBe(DeploymentVia.N8N);
     expect(Object.values(DeploymentVia)).toContain(VIA);
-  });
-
-  it('the SPA routing config is the one the SDK injects', () => {
-    // Every SDK-riding surface appends `SPA_DEFAULT_CONFIG`; this node restates
-    // it because it may not import it. Two surfaces writing two different
-    // rewrite rules is exactly the drift the fence table exists for.
-    expect(SPA_CONFIG).toEqual(SPA_DEFAULT_CONFIG);
-  });
-
-  it('the config filename is the one the platform reads', () => {
-    // It gates BOTH halves of the SPA mirror: whether the user already shipped
-    // a config, and what the appended file is called. Drift would silently
-    // break the escape hatch — the node would overwrite a `ship.json` it no
-    // longer recognised.
-    expect(SHIP_JSON).toBe(DEPLOYMENT_CONFIG_FILENAME);
   });
 
   it('the idempotency header is the one the platform reads', () => {

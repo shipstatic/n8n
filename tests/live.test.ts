@@ -93,10 +93,8 @@ function liveContext(params: Record<string, any>, token?: string) {
     helpers: {
       assertBinaryData: () => ({ fileName: 'index.html' }),
       getBinaryDataBuffer: async () => Buffer.from(params.__html ?? '<h1>live</h1>'),
-      // The legacy helper carries BOTH shapes: `formData` for the multipart
-      // deploy, `body` + `json: true` for the SPA check. Handling only the
-      // first made `/spa-check` throw — swallowed by design, which is why the
-      // deploy still succeeded and only the file count gave it away.
+      // The legacy helper carries both shapes, `formData` and `body` +
+      // `json: true`; the deploy is multipart.
       request: (opts: any) =>
         send(opts.uri, {
           method: opts.method,
@@ -219,28 +217,7 @@ describe.skipIf(!API_URL || !TOKEN)('live — authenticated', () => {
   });
 });
 
-// ─── SPA parity, and pagination ─────────────────────────────────────────────
-
-describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
-  it('a React-shaped build gets the routing config the SDK would have added', async () => {
-    // The whole finding: without this, a workflow deploying a React build
-    // serves 404s on every route but `/`. Only a real `/spa-check` can say
-    // whether the detector agrees with the mirror.
-    const [item] = await run(
-      deployParams({
-        input: 'text',
-        fileName: 'index.html',
-        fileContent:
-          '<html><head><script type="module" src="/assets/app.js"></script></head>' +
-          '<body><div id="root"></div></body></html>',
-      }),
-      TOKEN,
-    );
-    // Two files reached the API: the page, and the config the node appended.
-    expect(item.json.files).toBe(2);
-    expect(item.json.config).toBe(true);
-  });
-});
+// ─── Files mode, and pagination ─────────────────────────────────────────────
 
 describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
   // The one tier that can prove the whole files-mode path: JSON in, strict
@@ -263,9 +240,6 @@ describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
           { path: 'index.html', content: html },
           { path: 'pixel.gif', content: gifBase64, encoding: 'base64' },
         ],
-        // The site is deliberately NOT a SPA, so the file count stays 2 and a
-        // silent `ship.json` append would show up as a failure here.
-        options: { spaDetect: false },
       }),
       TOKEN,
     );
@@ -305,7 +279,6 @@ describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
         deployParams({
           input: 'files',
           files: [{ path: 'payload.exe', content: 'not really an executable' }],
-          options: { spaDetect: false },
         }),
         TOKEN,
       ),
