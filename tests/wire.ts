@@ -18,7 +18,7 @@
  * against a real API rather than a mock. Two tiers, one vocabulary.
  */
 import type {
-  AccountGetResponse,
+  Account,
   Deployment,
   DeploymentCreateResponse,
   DeploymentDeleteResponse,
@@ -133,6 +133,7 @@ export const DOMAIN_VALID = {
 // ─── Account ────────────────────────────────────────────────────────────────
 
 export const ACCOUNT = {
+  account: 'k3j9x2m7q1w8e5r4',
   email: 'me@example.com',
   name: null,
   picture: null,
@@ -149,5 +150,4 @@ export const ACCOUNT = {
   interval: null,
   scheduled: null,
   cancelAt: null,
-  authMethod: 'apiKey',
-} satisfies AccountGetResponse;
+} satisfies Account;
