@@ -75,7 +75,58 @@ to your app instead of returning 404, with nothing to configure. An app that
 ships other HTML files beside its shell declares the route itself: a
 `ship.json` rewrite from `/(.*)` to `/index.html` among the deployed files.
 
----------- | ------------------------------------------------------------------------------------------------------ |
+### Deployments that clean up after themselves
+
+Deploying a preview for every pull request, or a nightly build nobody needs to
+keep? Add **TTL** under Options and the deployment expires on its own after
+that many seconds — the platform reclaims it, and you are not left pruning.
+
+Two things to know before you reach for it:
+
+- **It needs credentials.** An anonymous deployment already expires on the
+  platform's schedule, so a TTL on one is refused rather than quietly ignored.
+- **A deployment with a TTL cannot be linked to a custom domain.** A domain is
+  a commitment and a deadline is its opposite — deploy without a TTL if the
+  site needs one.
+
+### Retries that do not deploy twice
+
+n8n's **Retry On Fail** makes a workflow the most likely thing to retry a deploy
+automatically. Set an **Idempotency Key** under Options and a retry replays the
+original deployment instead of creating a second one:
+
+```
+{{ $execution.id }}
+```
+
+Key the *attempt*, never the try — a value stable across retries of one logical
+deploy and different for the next. Leave it empty and every run deploys afresh.
+
+## All operations: free API key
+
+For permanent deployments and full control over your sites and domains, add a free API key:
+
+1. Get a free key at [my.shipstatic.com/api-key](https://my.shipstatic.com/api-key)
+2. In n8n, go to **Credentials > New Credential > ShipStatic API**
+3. Paste it into **Token** and save — n8n verifies the connection automatically
+
+### One credential slot
+
+The field is called **Token** and your API key is what goes in it — one
+credential, two names. Paste a `ship-…` key and every operation in this node
+works; n8n verifies the connection when you save.
+
+### Listing
+
+Both **List** operations honour n8n's usual controls. **Return All** follows the
+API's pagination to the end rather than stopping at the first page, and
+**Limit** stops once it has collected that many. The Deployment and Domain
+dropdowns page the same way as you scroll them.
+
+### Deployments
+
+| Operation  | Description                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
 | **Delete** | Delete a deployment and all its files — the response reports the deletion state |
 | **Deploy** | Publish files and get a live URL instantly                                                             |
 | **Get**    | Get deployment details including URL, status, file count, size, labels, and password protection state |
