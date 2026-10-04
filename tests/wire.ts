@@ -42,6 +42,7 @@ export const DEPLOYMENT = {
   status: 'success',
   config: false,
   password: false,
+  fallback: '/index.html',
   labels: [],
   via: 'n8n',
   created: 1785000000,
