@@ -443,13 +443,8 @@ async function detectSpa(
       headers: {
         'Content-Type': 'application/json',
         // The credential rides the pre-flight, exactly as the SDK's client
-        // does — it attaches auth to every request, this one included. Not
-        // cosmetic: `/spa-check` charges an ANONYMOUS caller the public write
-        // bucket and exempts a credentialed one, "so the pre-flight never
-        // double-charges the deploy it precedes".
-        // Probing anonymously with a token in hand forfeits that exemption and
-        // spends a budget the user already paid to avoid, which surfaces as
-        // deploys refused for a rate limit the credential was there to lift.
+        // does: it attaches auth to every request, this one included. The
+        // route reads none, so this is parity with the SDK and nothing more.
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: { files: files.map((f) => f.path), index: index.content.toString('utf-8') },

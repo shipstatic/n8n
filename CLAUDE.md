@@ -760,12 +760,11 @@ Every absence is a decision, recorded — the MCP's section, translated:
   pipe; those belong to first-party UI through `/upload`. (SPA *detection* is
   different — it appends a file, it does not ask the server to process one.)
 - **A keyless workflow in a tight loop meets the anonymous limit at the
-  pre-flight.** `/spa-check` charges an anonymous caller the public write
-  bucket and exempts a credentialed one, which
-  is why `detectSpa` presents the token when there is one. A 429 there fails
-  the deploy with the same "add an API key" advice a 429 on the upload gets
-  (`deployError`). The answer to "my deploys are rate limited" is an API key,
-  not a node change.
+  upload.** The pre-flight is unmetered and reads no credential; the deploy's
+  own per-IP budget is what a credential-less loop runs into. A keyless 429
+  on either of the deploy's two requests gets the same "add an API key"
+  advice (`deployError`), and the answer to "my deploys are rate limited" is
+  an API key, not a node change.
 - **No explicit deploy timeout.** The node passes none, so n8n's own default
   applies and the deploy is bounded by the operator's `EXECUTIONS_TIMEOUT`.
   This is deliberate: the SDK needed `DEFAULT_DEPLOY_TIMEOUT` because it drives
