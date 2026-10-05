@@ -445,8 +445,8 @@ async function detectSpa(
         // The credential rides the pre-flight, exactly as the SDK's client
         // does — it attaches auth to every request, this one included. Not
         // cosmetic: `/spa-check` charges an ANONYMOUS caller the public write
-        // bucket to bound its AI tier's spend, and exempts a credentialed one
-        // "so the pre-flight never double-charges the deploy it precedes".
+        // bucket and exempts a credentialed one, "so the pre-flight never
+        // double-charges the deploy it precedes".
         // Probing anonymously with a token in hand forfeits that exemption and
         // spends a budget the user already paid to avoid, which surfaces as
         // deploys refused for a rate limit the credential was there to lift.

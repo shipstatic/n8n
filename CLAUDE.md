@@ -761,7 +761,7 @@ Every absence is a decision, recorded — the MCP's section, translated:
   different — it appends a file, it does not ask the server to process one.)
 - **A keyless workflow in a tight loop meets the anonymous limit at the
   pre-flight.** `/spa-check` charges an anonymous caller the public write
-  bucket (its AI tier costs real money) and exempts a credentialed one, which
+  bucket and exempts a credentialed one, which
   is why `detectSpa` presents the token when there is one. A 429 there fails
   the deploy with the same "add an API key" advice a 429 on the upload gets
   (`deployError`). The answer to "my deploys are rate limited" is an API key,
