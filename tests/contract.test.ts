@@ -32,6 +32,7 @@ import {
   MY_API_KEY_URL,
   PASSWORD_CONSTRAINTS,
   PUBLIC_DEPLOYMENT_TTL_SECONDS,
+  SPA_CHECK_CONSTRAINTS,
   SPA_DEFAULT_CONFIG,
   TTL_CONSTRAINTS,
 } from '@shipstatic/types';
@@ -45,6 +46,7 @@ import {
   SHIP_JSON,
   Shipstatic,
   SPA_CONFIG,
+  SPA_MAX_INDEX_BYTES,
   VIA,
   type WireError,
 } from '../nodes/Shipstatic/Shipstatic.node';
@@ -166,6 +168,13 @@ describe('restated platform facts', () => {
     // it because it may not import it. Two surfaces writing two different
     // rewrite rules is exactly the drift the fence table exists for.
     expect(SPA_CONFIG).toEqual(SPA_DEFAULT_CONFIG);
+  });
+
+  it('the index size the node skips the question above is the platform bound', () => {
+    // Above it the platform answers "no" anyway. Larger here and a big index
+    // could fail a deploy at the question; smaller and an app the platform
+    // would detect is never asked about.
+    expect(SPA_MAX_INDEX_BYTES).toBe(SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES);
   });
 
   it('the config filename is the one the platform reads', () => {

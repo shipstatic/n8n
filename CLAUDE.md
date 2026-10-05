@@ -703,16 +703,17 @@ mirror a React build deployed from a workflow serves 404s on every route but
 `/` — on the ONE surface whose users are least equipped to know that
 `ship.json` is the remedy.
 
-`detectSpa()` mirrors the SDK in outcome: `POST /spa-check` (public, no
-credential; verified anonymously against dev), and on `isSPA` append the
-restated `SPA_CONFIG` as `ship.json`, byte-identical with the SDK's own
-generated config. It skips when the user shipped their own config and skips
-when `index.html` is absent. **A question that fails is the deploy failing**,
-as in the SDK: the error is raised through `deployError`, the one translation
-the question and the upload share, and nothing is uploaded. Unlike the SDK it holds NO
-index-size ceiling: `SPA_CHECK_CONSTRAINTS` in `@shipstatic/types` owns that
-number, its docblock names this consumer as needing no copy, and an oversized
-index is answered `isSPA: false` by the server, so the outcome still matches.
+`detectSpa()` mirrors the SDK: `POST /spa-check`, sent with no credential
+because the route reads none, and on `isSPA` append the restated `SPA_CONFIG`
+as `ship.json`, byte-identical with the SDK's own generated config. It skips
+when the user shipped their own config, when `index.html` is absent, and when
+the index is over `SPA_MAX_INDEX_BYTES`: the platform answers such an index
+"no", and its route refuses a body over the JSON intake cap, so asking about a
+very large index would fail a deploy whose upload succeeds. That number is
+restated from `SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES` and held by
+`tests/contract.test.ts`, like every other restatement here. **A question
+that fails is the deploy failing**, as in the SDK: its error surfaces as the
+API's own (`apiError`), and nothing is uploaded.
 The append happens BEFORE formData is built so the config's checksum rides
 along; after it, the API would reject the deploy for a length mismatch.
 
@@ -762,9 +763,10 @@ Every absence is a decision, recorded — the MCP's section, translated:
 - **A keyless workflow in a tight loop meets the anonymous limit at the
   upload.** The pre-flight is unmetered and reads no credential; the deploy's
   own per-IP budget is what a credential-less loop runs into. A keyless 429
-  on either of the deploy's two requests gets the same "add an API key"
-  advice (`deployError`), and the answer to "my deploys are rate limited" is
-  an API key, not a node change.
+  on the upload gets the "add an API key" advice. A 429 on the question is the
+  platform's traffic ceiling, which a key does not lift, so it surfaces as the
+  API's own error with no advice. The answer to "my deploys are rate limited"
+  is an API key, not a node change.
 - **No explicit deploy timeout.** The node passes none, so n8n's own default
   applies and the deploy is bounded by the operator's `EXECUTIONS_TIMEOUT`.
   This is deliberate: the SDK needed `DEFAULT_DEPLOY_TIMEOUT` because it drives

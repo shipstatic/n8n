@@ -354,33 +354,20 @@ async function uploadDeployment(
       json: true,
     });
   } catch (error) {
-    throw deployError(ctx, error, token);
+    // A keyless deploy is metered per IP on the platform's anonymous bucket.
+    // When that is the cause, the actionable fix is "add credentials", so say
+    // it instead of leaving the caller to retry blindly. An authenticated 429
+    // is a different limit with different advice, so the hint is conditional
+    // on the credential being absent.
+    if (!token && isRateLimited(error)) {
+      throw apiError(ctx, error, {
+        message: 'Public deploy rate limit exceeded',
+        description:
+          'Add a ShipStatic API key (free at https://my.shipstatic.com/api-key) for higher limits, or wait and retry later.',
+      });
+    }
+    throw apiError(ctx, error);
   }
-}
-
-/**
- * The error a deploy fails with, whichever of its two requests failed: the
- * single-page question or the upload.
- *
- * A keyless deploy is metered per IP on the platform's anonymous bucket, and
- * both requests draw on it. When that is the cause, the actionable fix is
- * "add credentials", so say it instead of leaving the caller to retry
- * blindly. An authenticated 429 is a different limit with different advice,
- * so the hint is conditional on the credential being absent.
- */
-function deployError(
-  ctx: IExecuteFunctions,
-  error: unknown,
-  token: string | undefined,
-): NodeApiError {
-  if (!token && isRateLimited(error)) {
-    return apiError(ctx, error, {
-      message: 'Public deploy rate limit exceeded',
-      description:
-        'Add a ShipStatic API key (free at https://my.shipstatic.com/api-key) for higher limits, or wait and retry later.',
-    });
-  }
-  return apiError(ctx, error);
 }
 
 /**
@@ -394,10 +381,9 @@ function deployError(
  * are least equipped to diagnose that, and least likely to know what
  * `ship.json` is.
  *
- * Mirrors the SDK's posture in outcome: skip when the user already ships a
- * config, skip when `index.html` is absent, and fail the deploy when the
- * question itself fails. The one mechanical difference is the size ceiling,
- * owned and sanctioned below.
+ * Mirrors the SDK's posture: skip when the user already ships a config, skip
+ * when `index.html` is absent or over the size the platform answers "no" to,
+ * and fail the deploy when the question itself fails.
  */
 // Restated from `DEPLOYMENT_CONFIG_FILENAME`; fenced against it. It gates both
 // the skip-when-the-user-shipped-one check and the appended filename, so drift
@@ -412,41 +398,25 @@ export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
 export const SPA_CONFIG = { rewrites: [{ source: '/(.*)', destination: '/index.html' }] };
 
 /**
- * **The server classifies; this node does not.** The index-size ceiling the
- * SDK skips on has an owner now: `SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES` in
- * `@shipstatic/types`, which the SDK imports and the API derives its own
- * bound from. This node still holds no copy, and the posture is sanctioned
- * by the owner itself: the constant's docblock names this consumer and says
- * a client that cannot import it needs no size copy at all, because outcome
- * parity is the server's. (This comment once justified the absence by the
- * owner's ABSENCE; when types minted the constant, the reason was rewritten
- * to cite the sanction rather than silently rot.)
- *
- * Not holding the number is stronger than fencing a restated copy: a client
- * that never makes the classification decision cannot disagree with the
- * server about it. An oversized index is answered `isSPA: false` gracefully,
- * so what a user experiences matches the SDK. The cost is one redundant
- * upload of an index the deploy sends anyway, in the uncommon case of an
- * index over the ceiling, bounded by the API's own body limit.
+ * Restated from `SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES`; fenced against it.
+ * An index larger than this is not asked about: the platform answers such an
+ * index "no", and its route refuses a body over the JSON intake cap, so
+ * asking about a very large one would fail a deploy whose upload succeeds.
  */
-async function detectSpa(
-  ctx: IExecuteFunctions,
-  files: { path: string; content: Buffer }[],
-  token: string | undefined,
-) {
+export const SPA_MAX_INDEX_BYTES = 100 * 1024;
+
+/**
+ * **The server decides; this node asks.** The question carries no
+ * credential: the route reads none, since its answer is about the request.
+ */
+async function detectSpa(ctx: IExecuteFunctions, files: { path: string; content: Buffer }[]) {
   const index = files.find((f) => f.path === 'index.html');
-  if (!index) return false;
+  if (!index || index.content.length > SPA_MAX_INDEX_BYTES) return false;
   try {
     const response = (await ctx.helpers.request({
       method: 'POST',
       uri: `${API}/spa-check`,
-      headers: {
-        'Content-Type': 'application/json',
-        // The credential rides the pre-flight, exactly as the SDK's client
-        // does: it attaches auth to every request, this one included. The
-        // route reads none, so this is parity with the SDK and nothing more.
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: { files: files.map((f) => f.path), index: index.content.toString('utf-8') },
       json: true,
     })) as IDataObject;
@@ -456,7 +426,7 @@ async function detectSpa(
     // decided, so its failure is the deploy's, exactly as in the SDK:
     // deploying without the answer would publish an app whose routes 404 on
     // reload behind a success.
-    throw deployError(ctx, error, token);
+    throw apiError(ctx, error);
   }
 }
 
@@ -689,11 +659,7 @@ async function handleDeploy(
   //    user did not ship their own. Runs on the stripped paths because that is
   //    what the deployment will serve.
   const spaDetect = options.spaDetect !== false;
-  if (
-    spaDetect &&
-    !files.some((f) => f.path === SHIP_JSON) &&
-    (await detectSpa(ctx, files, token))
-  ) {
+  if (spaDetect && !files.some((f) => f.path === SHIP_JSON) && (await detectSpa(ctx, files))) {
     // Byte-identical with the SDK's generated config (no trailing newline),
     // so one site gets one ship.json whichever surface deploys it.
     const content = Buffer.from(JSON.stringify(SPA_CONFIG, null, 2), 'utf-8');

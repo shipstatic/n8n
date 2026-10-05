@@ -5,6 +5,7 @@ import {
   extractResourceLocatorValue,
   parseLabels,
   Shipstatic,
+  SPA_MAX_INDEX_BYTES,
   stripCommonPrefix,
 } from '../nodes/Shipstatic/Shipstatic.node';
 import {
@@ -800,23 +801,11 @@ describe('Deploy — SPA routing', () => {
     expect(check[0].body).toEqual({ files: ['index.html'], index: '<html></html>' });
   });
 
-  it('presents the credential on the pre-flight, like the SDK does', async () => {
-    // `/spa-check` charges an anonymous caller the public write bucket and
-    // exempts a credentialed one, so probing anonymously with a token in hand
-    // spends a budget the user already paid to avoid. The SDK's client
-    // attaches auth to every request; so does this.
-    const ctx = spaCtx(false);
-
-    await node.execute.call(ctx);
-
-    const check = ctx.helpers.request.mock.calls.find((c: any[]) =>
-      c[0].uri.endsWith('/spa-check'),
-    );
-    expect(check[0].headers.Authorization).toBe('Bearer ship-test');
-  });
-
-  it('probes anonymously when there is no credential to present', async () => {
-    const ctx = createDeployContext({}, null);
+  it.each([
+    ['with a credential configured', undefined],
+    ['with none', null],
+  ])('asks the question without a credential, %s: the route reads none', async (_w, creds) => {
+    const ctx = createDeployContext({}, creds as any);
     ctx.helpers.request.mockImplementation(async (opts: any) =>
       opts.uri.endsWith('/spa-check') ? { isSPA: false } : DEPLOYMENT,
     );
@@ -826,7 +815,28 @@ describe('Deploy — SPA routing', () => {
     const check = ctx.helpers.request.mock.calls.find((c: any[]) =>
       c[0].uri.endsWith('/spa-check'),
     );
-    expect(check[0].headers.Authorization).toBeUndefined();
+    expect(check[0].headers).toEqual({ 'Content-Type': 'application/json' });
+  });
+
+  // The platform answers an index over its bound "no", and its route refuses
+  // a body over the JSON intake cap, so the node skips the question above the
+  // bound, exactly as the SDK does.
+  it.each([
+    ['at the bound is asked about', SPA_MAX_INDEX_BYTES, 1],
+    ['one byte over is not', SPA_MAX_INDEX_BYTES + 1, 0],
+  ])('an index %s', async (_w, bytes, asked) => {
+    const ctx = spaCtx(true, {
+      input: 'text',
+      fileContent: 'x'.repeat(bytes),
+      fileName: 'index.html',
+    });
+
+    await node.execute.call(ctx);
+
+    expect(
+      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/spa-check')),
+    ).toHaveLength(asked);
+    expect(filenames(ctx).includes('ship.json')).toBe(asked === 1);
   });
 });
 
@@ -1020,17 +1030,22 @@ describe('Deploy — error handling', () => {
     const ctx = createDeployContext();
     const httpError: any = new Error('Unauthorized');
     httpError.httpCode = '401';
-    ctx.helpers.request.mockRejectedValue(httpError);
+    ctx.helpers.request.mockImplementation(async (opts: any) => {
+      if (opts.uri.endsWith('/spa-check')) return { isSPA: false };
+      throw httpError;
+    });
 
     await expect(node.execute.call(ctx)).rejects.toMatchObject({
       name: 'NodeApiError',
       httpCode: '401',
     });
-    // One request, carrying the token, and nothing after it: the deploy ends
-    // at its first refusal and no request is ever retried without the header.
-    const calls = ctx.helpers.request.mock.calls;
-    expect(calls).toHaveLength(1);
-    expect(calls[0][0].headers.Authorization).toMatch(/^Bearer /);
+    // One upload, carrying the token, and nothing after it: the deploy ends
+    // at its refusal and no upload is ever retried without the header.
+    const uploads = ctx.helpers.request.mock.calls.filter((c: any[]) =>
+      c[0].uri.endsWith('/deployments'),
+    );
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0][0].headers.Authorization).toMatch(/^Bearer /);
   });
 
   it('a rate-limited KEYLESS deploy surfaces the actionable "add a key" message', async () => {
@@ -1049,16 +1064,17 @@ describe('Deploy — error handling', () => {
     });
   });
 
-  it('gives a rate-limited KEYLESS question the same advice: both requests draw on one budget', async () => {
+  it('gives a rate-limited KEYLESS question no "add a key" advice: a key lifts nothing there', async () => {
+    // The question spends no write budget, so a 429 on it is the platform's
+    // traffic ceiling, which a credential does not raise.
     const ctx = createDeployContext({}, null);
     const httpError: any = new Error('Too Many Requests');
     httpError.httpCode = '429';
     ctx.helpers.request.mockRejectedValue(httpError);
 
-    await expect(node.execute.call(ctx)).rejects.toMatchObject({
-      name: 'NodeApiError',
-      message: expect.stringContaining('Public deploy rate limit exceeded'),
-    });
+    const failure = await node.execute.call(ctx).catch((e: unknown) => e);
+    expect(failure).toMatchObject({ name: 'NodeApiError', httpCode: '429' });
+    expect((failure as Error).message).not.toContain('Public deploy rate limit exceeded');
     expect(ctx.helpers.request.mock.calls).toHaveLength(1);
     expect(ctx.helpers.request.mock.calls[0][0].uri).toMatch(/\/spa-check$/);
   });
