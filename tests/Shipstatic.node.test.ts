@@ -894,6 +894,17 @@ describe('Per-item error attribution', () => {
 });
 
 describe('Deploy — error handling', () => {
+  /**
+   * The upload fails and the single-page question before it is answered, so
+   * these rows reach the upload's own failure path. A mock that rejects
+   * everything fails at the question and never gets there.
+   */
+  const failUpload = (ctx: any, error: unknown) =>
+    ctx.helpers.request.mockImplementation(async (opts: any) => {
+      if (opts.uri.endsWith('/spa-check')) return { isSPA: false };
+      throw error;
+    });
+
   beforeEach(() => vi.clearAllMocks());
 
   // ─── Files (JSON) refusals ────────────────────────────────────────────────
@@ -994,7 +1005,7 @@ describe('Deploy — error handling', () => {
     const ctx = createDeployContext();
     const httpError: any = new Error('Deploy rejected');
     httpError.httpCode = '413';
-    ctx.helpers.request.mockRejectedValue(httpError);
+    failUpload(ctx, httpError);
 
     await expect(node.execute.call(ctx)).rejects.toMatchObject({
       name: 'NodeApiError',
@@ -1030,12 +1041,26 @@ describe('Deploy — error handling', () => {
     const ctx = createDeployContext({}, null);
     const httpError: any = new Error('Too Many Requests');
     httpError.httpCode = '429';
+    failUpload(ctx, httpError);
+
+    await expect(node.execute.call(ctx)).rejects.toMatchObject({
+      name: 'NodeApiError',
+      message: expect.stringContaining('Public deploy rate limit exceeded'),
+    });
+  });
+
+  it('gives a rate-limited KEYLESS question the same advice: both requests draw on one budget', async () => {
+    const ctx = createDeployContext({}, null);
+    const httpError: any = new Error('Too Many Requests');
+    httpError.httpCode = '429';
     ctx.helpers.request.mockRejectedValue(httpError);
 
     await expect(node.execute.call(ctx)).rejects.toMatchObject({
       name: 'NodeApiError',
       message: expect.stringContaining('Public deploy rate limit exceeded'),
     });
+    expect(ctx.helpers.request.mock.calls).toHaveLength(1);
+    expect(ctx.helpers.request.mock.calls[0][0].uri).toMatch(/\/spa-check$/);
   });
 
   it('recognises the rate limit whether the status arrives as a string or a number', async () => {
@@ -1046,7 +1071,7 @@ describe('Deploy — error handling', () => {
     const ctx = createDeployContext({}, null);
     const httpError: any = new Error('Too Many Requests');
     httpError.statusCode = 429;
-    ctx.helpers.request.mockRejectedValue(httpError);
+    failUpload(ctx, httpError);
 
     await expect(node.execute.call(ctx)).rejects.toMatchObject({
       message: expect.stringContaining('Public deploy rate limit exceeded'),
@@ -1060,7 +1085,7 @@ describe('Deploy — error handling', () => {
     const ctx = createDeployContext();
     const httpError: any = new Error('Too Many Requests');
     httpError.httpCode = '429';
-    ctx.helpers.request.mockRejectedValue(httpError);
+    failUpload(ctx, httpError);
 
     await expect(node.execute.call(ctx)).rejects.toMatchObject({
       name: 'NodeApiError',
@@ -1070,7 +1095,7 @@ describe('Deploy — error handling', () => {
 
   it('returns error item when continueOnFail is enabled', async () => {
     const ctx = createDeployContext();
-    ctx.helpers.request.mockRejectedValue(new Error('Deploy failed'));
+    failUpload(ctx, new Error('Deploy failed'));
     ctx.continueOnFail.mockReturnValue(true);
 
     const [results] = await node.execute.call(ctx);
@@ -1084,7 +1109,7 @@ describe('Deploy — error handling', () => {
     // would silently drop items 1..N from n8n's data lineage.
     const ctx = createDeployContext();
     ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }, { json: {} }]);
-    ctx.helpers.request.mockRejectedValue(new Error('Deploy failed'));
+    failUpload(ctx, new Error('Deploy failed'));
     ctx.continueOnFail.mockReturnValue(true);
 
     const [results] = await node.execute.call(ctx);
