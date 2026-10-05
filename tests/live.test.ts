@@ -95,8 +95,7 @@ function liveContext(params: Record<string, any>, token?: string) {
       getBinaryDataBuffer: async () => Buffer.from(params.__html ?? '<h1>live</h1>'),
       // The legacy helper carries BOTH shapes: `formData` for the multipart
       // deploy, `body` + `json: true` for the SPA check. Handling only the
-      // first made `/spa-check` throw — swallowed by design, which is why the
-      // deploy still succeeded and only the file count gave it away.
+      // first makes `/spa-check` throw, and the deploy fails with it.
       request: (opts: any) =>
         send(opts.uri, {
           method: opts.method,

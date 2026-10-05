@@ -706,9 +706,10 @@ mirror a React build deployed from a workflow serves 404s on every route but
 `detectSpa()` mirrors the SDK in outcome: `POST /spa-check` (public, no
 credential; verified anonymously against dev), and on `isSPA` append the
 restated `SPA_CONFIG` as `ship.json`, byte-identical with the SDK's own
-generated config. It skips when the user shipped their own config, skips when
-`index.html` is absent, and **continues silently on any failure**; detection
-is an enhancement, never a gate on the deploy. Unlike the SDK it holds NO
+generated config. It skips when the user shipped their own config and skips
+when `index.html` is absent. **A question that fails is the deploy failing**,
+as in the SDK: the error is raised through `deployError`, the one translation
+the question and the upload share, and nothing is uploaded. Unlike the SDK it holds NO
 index-size ceiling: `SPA_CHECK_CONSTRAINTS` in `@shipstatic/types` owns that
 number, its docblock names this consumer as needing no copy, and an oversized
 index is answered `isSPA: false` by the server, so the outcome still matches.
@@ -758,15 +759,13 @@ Every absence is a decision, recorded — the MCP's section, translated:
 - **No `spa` / `build` / `prerender` flags.** `/deployments` is a pure file
   pipe; those belong to first-party UI through `/upload`. (SPA *detection* is
   different — it appends a file, it does not ask the server to process one.)
-- **SPA detection degrades silently for heavy KEYLESS use, by design.**
-  `/spa-check` charges an anonymous caller the public write bucket (its AI tier
-  costs real money) and exempts a credentialed one — which is why `detectSpa`
-  presents the token when there is one. A credential-less workflow deploying in
-  a tight loop will eventually get a 429 on the pre-flight; it is swallowed, so
-  the deploy still succeeds and only the routing config stops being added.
-  Discovered empirically while running the live tier repeatedly. If someone
-  reports "SPA routing works sometimes", this is it — and the answer is an API
-  key, not a node change.
+- **A keyless workflow in a tight loop meets the anonymous limit at the
+  pre-flight.** `/spa-check` charges an anonymous caller the public write
+  bucket (its AI tier costs real money) and exempts a credentialed one, which
+  is why `detectSpa` presents the token when there is one. A 429 there fails
+  the deploy with the same "add an API key" advice a 429 on the upload gets
+  (`deployError`). The answer to "my deploys are rate limited" is an API key,
+  not a node change.
 - **No explicit deploy timeout.** The node passes none, so n8n's own default
   applies and the deploy is bounded by the operator's `EXECUTIONS_TIMEOUT`.
   This is deliberate: the SDK needed `DEFAULT_DEPLOY_TIMEOUT` because it drives

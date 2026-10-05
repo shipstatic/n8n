@@ -354,20 +354,33 @@ async function uploadDeployment(
       json: true,
     });
   } catch (error) {
-    // A keyless deploy is metered per IP on the platform's anonymous bucket.
-    // When that is the cause, the actionable fix is "add credentials" — say
-    // so rather than leaving the caller to retry blindly. An authenticated
-    // 429 is a different limit with different advice, so the hint is
-    // conditional on the credential being absent.
-    if (!token && isRateLimited(error)) {
-      throw apiError(ctx, error, {
-        message: 'Public deploy rate limit exceeded',
-        description:
-          'Add a ShipStatic API key (free at https://my.shipstatic.com/api-key) for higher limits, or wait and retry later.',
-      });
-    }
-    throw apiError(ctx, error);
+    throw deployError(ctx, error, token);
   }
+}
+
+/**
+ * The error a deploy fails with, whichever of its two requests failed: the
+ * single-page question or the upload.
+ *
+ * A keyless deploy is metered per IP on the platform's anonymous bucket, and
+ * both requests draw on it. When that is the cause, the actionable fix is
+ * "add credentials", so say it instead of leaving the caller to retry
+ * blindly. An authenticated 429 is a different limit with different advice,
+ * so the hint is conditional on the credential being absent.
+ */
+function deployError(
+  ctx: IExecuteFunctions,
+  error: unknown,
+  token: string | undefined,
+): NodeApiError {
+  if (!token && isRateLimited(error)) {
+    return apiError(ctx, error, {
+      message: 'Public deploy rate limit exceeded',
+      description:
+        'Add a ShipStatic API key (free at https://my.shipstatic.com/api-key) for higher limits, or wait and retry later.',
+    });
+  }
+  return apiError(ctx, error);
 }
 
 /**
@@ -382,9 +395,9 @@ async function uploadDeployment(
  * `ship.json` is.
  *
  * Mirrors the SDK's posture in outcome: skip when the user already ships a
- * config, skip when `index.html` is absent, and **continue silently on any
- * failure**. Detection is an enhancement, never a gate on the deploy. The one
- * mechanical difference is the size ceiling, owned and sanctioned below.
+ * config, skip when `index.html` is absent, and fail the deploy when the
+ * question itself fails. The one mechanical difference is the size ceiling,
+ * owned and sanctioned below.
  */
 // Restated from `DEPLOYMENT_CONFIG_FILENAME`; fenced against it. It gates both
 // the skip-when-the-user-shipped-one check and the appended filename, so drift
@@ -435,17 +448,20 @@ async function detectSpa(
         // bucket to bound its AI tier's spend, and exempts a credentialed one
         // "so the pre-flight never double-charges the deploy it precedes".
         // Probing anonymously with a token in hand forfeits that exemption and
-        // spends a budget the user already paid to avoid — which surfaces as
-        // SPA routing silently ceasing to work under sustained use, while the
-        // deploys themselves keep succeeding.
+        // spends a budget the user already paid to avoid, which surfaces as
+        // deploys refused for a rate limit the credential was there to lift.
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: { files: files.map((f) => f.path), index: index.content.toString('utf-8') },
       json: true,
     })) as IDataObject;
     return response.isSPA === true;
-  } catch {
-    return false;
+  } catch (error) {
+    // A question that could not be asked is a deploy that could not be
+    // decided, so its failure is the deploy's, exactly as in the SDK:
+    // deploying without the answer would publish an app whose routes 404 on
+    // reload behind a success.
+    throw deployError(ctx, error, token);
   }
 }
 

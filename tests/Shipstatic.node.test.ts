@@ -759,19 +759,20 @@ describe('Deploy — SPA routing', () => {
     ).toHaveLength(0);
   });
 
-  it('a failed detection never gates the deploy', async () => {
-    // The SDK's own posture: detection is an enhancement. A 500 on /spa-check
-    // must not cost the user their deployment.
+  it('a question that fails is the deploy failing: nothing is uploaded', async () => {
+    // The SDK's own posture: an undecided deploy must not ship, because an
+    // app deployed without its answer 404s on reload behind a success.
     const ctx = createDeployContext();
     ctx.helpers.request.mockImplementation(async (opts: any) => {
       if (opts.uri.endsWith('/spa-check')) throw new Error('detector down');
       return DEPLOYMENT;
     });
 
-    const [results] = await node.execute.call(ctx);
+    await expect(node.execute.call(ctx)).rejects.toThrow('detector down');
 
-    expect(results[0].json).toEqual(DEPLOYMENT);
-    expect(filenames(ctx)).not.toContain('ship.json');
+    expect(
+      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/deployments')),
+    ).toHaveLength(0);
   });
 
   it('skips the check when there is no index.html to read', async () => {
@@ -1014,12 +1015,11 @@ describe('Deploy — error handling', () => {
       name: 'NodeApiError',
       httpCode: '401',
     });
-    // One DEPLOY attempt. No retry without the header. (The SPA check also
-    // rejects here and is swallowed by design — detection never gates a
-    // deploy — so deploy calls are counted rather than all calls.)
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri?.endsWith('/deployments')),
-    ).toHaveLength(1);
+    // One request, carrying the token, and nothing after it: the deploy ends
+    // at its first refusal and no request is ever retried without the header.
+    const calls = ctx.helpers.request.mock.calls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0].headers.Authorization).toMatch(/^Bearer /);
   });
 
   it('a rate-limited KEYLESS deploy surfaces the actionable "add a key" message', async () => {
