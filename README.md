@@ -247,7 +247,7 @@ changes four things in saved workflows:
 | **[CLI and SDK](https://github.com/shipstatic/ship)** | `npx @shipstatic/ship ./dist` |
 | **[VS Code](https://marketplace.visualstudio.com/items?itemName=shipstatic.shipstatic)** | Search "ShipStatic" in the Marketplace |
 | **[Gemini CLI](https://github.com/shipstatic/plugin)** | `gemini extensions install https://github.com/shipstatic/plugin` |
-| **[GitHub Action](https://github.com/shipstatic/action)** | `shipstatic/action@v2` |
+| **[GitHub Action](https://github.com/shipstatic/action)** | `shipstatic/action@v3` |
 | **[Agent Skill](https://www.shipstatic.com/SKILL.md)** | One file, for any skills-aware tool |
 
 ## License
