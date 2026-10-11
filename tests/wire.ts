@@ -139,7 +139,7 @@ export const ACCOUNT = {
   picture: null,
   plan: 'free',
   suspended: false,
-  usage: { deployments: 2, platformDomains: 0, customDomains: 1, members: 1 },
+  usage: { deployments: 2, platformDomains: 0, customDomains: 1, members: 1, invitations: 0 },
   caps: { deployments: 10, platformDomains: 1, customDomains: 1, members: 1 },
   created: 1785000000,
   activated: 1785000000,
