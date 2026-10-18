@@ -24,6 +24,7 @@ import type { ErrorResponse } from '@shipstatic/types';
 import {
   API_KEY,
   DEFAULT_API,
+  DEPLOY_FIELDS,
   DEPLOY_FILE_GRAMMAR,
   DEPLOY_TOKEN,
   DEPLOYMENT_CONFIG_FILENAME,
@@ -41,6 +42,7 @@ import { describe, expect, it } from 'vitest';
 import { ShipstaticApi } from '../credentials/ShipstaticApi.credentials';
 import { API } from '../nodes/Shipstatic/api';
 import {
+  DEPLOY_FORM,
   FILES_GRAMMAR,
   IDEMPOTENCY_HEADER,
   SHIP_JSON,
@@ -331,6 +333,15 @@ describe('operation catalogue', () => {
     expect((ttl as unknown as { description: string })?.description).toContain(
       'cannot be linked to a custom domain',
     );
+  });
+
+  it('holds every multipart field name the node sends to its owner in @shipstatic/types', () => {
+    // The node names its deploy fields as literals, the zero-import rule's
+    // price; each is held to `DEPLOY_FIELDS` by key, so a field the platform
+    // renames or retires fails here rather than in a user's workflow.
+    for (const [key, name] of Object.entries(DEPLOY_FORM)) {
+      expect(name).toBe(DEPLOY_FIELDS[key as keyof typeof DEPLOY_FIELDS]);
+    }
   });
 
   it('holds the Files (JSON) grammar to its owner in @shipstatic/types', () => {

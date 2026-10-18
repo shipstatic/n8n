@@ -490,10 +490,9 @@ Until then `tests/contract.test.ts` pins the grammar LOCALLY and says so: a
 self-consistency pin that cannot catch the API renaming a field. Expiry: the
 export exists → the pin becomes an owner-compare.
 
-All three modes use n8n's `request` helper with the `formData` option — the same proven pattern used by Slack, S3, and Google Drive for multipart file uploads. The formData includes:
+All three modes use n8n's `request` helper with the `formData` option — the same proven pattern used by Slack, S3, and Google Drive for multipart file uploads. Its field names are `DEPLOY_FORM`, held by `tests/contract.test.ts` to `DEPLOY_FIELDS` in `@shipstatic/types`. The formData includes:
 
 - `files[]` — one File entry per item (or one from text content)
-- `checksums` — JSON array of MD5 hashes (via `node:crypto`)
 - `via` — always `"n8n"` (the `VIA` constant; fenced against `DeploymentVia.N8N`)
 - `labels` — optional JSON array
 - `password` — optional plaintext (6–128 chars); the API hashes it server-side
@@ -512,6 +511,17 @@ deployment that never expires after they asked for one that expires
 immediately. The field's `default: 3600` exists for the same reason: adding a
 collection option puts its key in at the default, so a number field's default
 is what an unedited "Add Option" click sends.
+
+**A deploy is one request, by decision.** The node sends no manifest and no
+digest: a request that carries every file needs neither, and the API hashes
+what it receives. Sending a site in several requests (a declaration, then
+fills) is the SDK's protocol, and the node does not restate it, because n8n
+Cloud's zero-dependency rule would make it a second copy of the SDK's planner,
+upload loop and replay rule, held to the original by nothing but fences. So
+the node ships a site that fits one request, and the API's 413 for one that
+does not is relayed as a sentence naming the CLI (`npx @shipstatic/ship
+./dist`), which sends it in several. Expiry: n8n Cloud admits a dependency, and
+the node takes the SDK.
 
 **No server-processing flags.** `/deployments` is a pure file pipe — n8n never sets `spa`, `build`, or `prerender`. Those flags are reserved for first-party UI (`web/my`, `web/www`) routing through `/upload`. See `cloudflare/api/CLAUDE.md` "Endpoint Purity". For SPA routing, users include `ship.json` in their input files; the deployment serves it as-is.
 
@@ -714,8 +724,8 @@ restated from `SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES` and held by
 `tests/contract.test.ts`, like every other restatement here. **A question
 that fails is the deploy failing**, as in the SDK: its error surfaces as the
 API's own (`apiError`), and nothing is uploaded.
-The append happens BEFORE formData is built so the config's checksum rides
-along; after it, the API would reject the deploy for a length mismatch.
+The append happens BEFORE formData is built, so the config rides in the same
+request as the files it configures.
 
 ### Option completeness
 
@@ -871,7 +881,7 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 | `stripCommonPrefix` | Pure helper |
 | `extractResourceLocatorValue` | Pure helper |
 | `Deploy — authentication` | `handleDeploy` credential resolution + the anonymous door |
-| `Deploy — file collection & formData` | `handleDeploy` file pipeline (binary/text, paths, MD5, payload) |
+| `Deploy — file collection & formData` | `handleDeploy` file pipeline (binary/text, paths, payload) |
 | `Deploy — SPA routing` | `handleDeploy` SPA detection + the `ship.json` append |
 | `Deploy — idempotency` | `handleDeploy` `Idempotency-Key` threading |
 | `Deploy — error handling` | `handleDeploy` failure paths (empty files, rejected token, rate limit, continueOnFail trace) |

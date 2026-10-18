@@ -24,7 +24,6 @@
  * unlocks the deploy-token scope asymmetry. Each block skips independently, so
  * a partial credential set runs the part it can prove.
  */
-import { createHash } from 'node:crypto';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 const API_URL = process.env.SHIP_API_URL;
@@ -206,15 +205,6 @@ describe.skipIf(!API_URL || !TOKEN)('live — authenticated', () => {
     const [item] = await run({ resource: 'account', operation: 'whoami' }, TOKEN);
     expect(item.json.email).toBeTruthy();
     expect(item.json.plan).toBeTruthy();
-  });
-
-  it('checksums are what the API verified the upload against', () => {
-    // If the node's MD5s disagreed with the bytes, the deploy above would have
-    // been rejected — so a successful deploy IS the assertion. Stated so the
-    // guarantee is not invisible.
-    const md5 = createHash('md5').update(Buffer.from('<h1>live</h1>')).digest('hex');
-    expect(md5).toHaveLength(32);
-    expect(deployment.files).toBe(1);
   });
 });
 

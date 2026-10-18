@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { IDataObject } from 'n8n-workflow';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -455,10 +454,9 @@ describe('Deploy — file collection & formData', () => {
 
     const entries = getFormData(ctx)['files[]'] as any[];
     expect(entries[0].value.toString('utf-8')).toBe('<h1>Hi</h1>');
-    // Checksum-verified: the bytes are the ORIGINAL bytes, not the base64 text.
+    // The bytes are the ORIGINAL bytes, not the base64 text: the API hashes
+    // what it receives, so these are the bytes it stores.
     expect(entries[1].value.equals(png)).toBe(true);
-    const checksums = JSON.parse(getFormData(ctx).checksums as string);
-    expect(checksums[1]).toBe(createHash('md5').update(png).digest('hex'));
   });
 
   it('never strips a common prefix — the paths were written, not discovered', async () => {
@@ -594,16 +592,12 @@ describe('Deploy — file collection & formData', () => {
     expect(files[0].options.filename).toBe('real.html');
   });
 
-  it('sends correct MD5 checksums for each file', async () => {
-    const { createHash } = await import('node:crypto');
+  it('sends the files and the options and no digest: the API hashes what it receives', async () => {
     const ctx = createDeployContext();
-    const content = Buffer.from('<html></html>');
-    const expectedMd5 = createHash('md5').update(content).digest('hex');
 
     await node.execute.call(ctx);
 
-    const fd = getFormData(ctx);
-    expect(fd.checksums).toBe(`["${expectedMd5}"]`);
+    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'via']);
   });
 
   it('single file deploy preserves path without stripping', async () => {
@@ -710,15 +704,15 @@ describe('Deploy — SPA routing', () => {
     expect(config.value.toString().endsWith('\n')).toBe(false);
   });
 
-  it('its checksum rides along — the API verifies every file', async () => {
-    // The config is appended BEFORE formData is built. Were it after, the
-    // API would reject the deploy for a files/checksums length mismatch.
+  it('rides in the same request as the files it routes', async () => {
+    // The config is appended BEFORE formData is built, so it is one of the
+    // files the API receives rather than a request of its own.
     const ctx = spaCtx(true);
 
     await node.execute.call(ctx);
 
-    const fd = getFormData(ctx);
-    expect(JSON.parse(fd.checksums as string)).toHaveLength((fd['files[]'] as any[]).length);
+    const names = (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
+    expect(names).toContain('ship.json');
   });
 
   it('adds nothing when the app is not a single-page app', async () => {
@@ -1062,6 +1056,25 @@ describe('Deploy — error handling', () => {
       name: 'NodeApiError',
       message: expect.stringContaining('Public deploy rate limit exceeded'),
     });
+  });
+
+  it('a deploy too big for one request names the CLI, which sends a site in several', async () => {
+    // The API's own 413 sentence says to update ship, which is the CLI's
+    // advice. This node sends a site in one request by design, so the way to
+    // ship a bigger one is the CLI, and the node says so.
+    const ctx = createDeployContext();
+    const httpError: any = new Error('Payload Too Large');
+    httpError.httpCode = '413';
+    failUpload(ctx, httpError);
+
+    const failure = await node.execute.call(ctx).catch((e: unknown) => e);
+    expect(failure).toMatchObject({
+      name: 'NodeApiError',
+      message: 'This site is too big to send in one request',
+    });
+    expect((failure as { description?: string }).description).toContain(
+      'npx @shipstatic/ship ./dist',
+    );
   });
 
   it('gives a rate-limited KEYLESS question no "add a key" advice: a key lifts nothing there', async () => {

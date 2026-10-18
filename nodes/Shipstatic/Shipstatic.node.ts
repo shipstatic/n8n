@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type {
   IDataObject,
   IExecuteFunctions,
@@ -34,10 +33,6 @@ export const VIA = 'n8n';
 // Pure helpers
 // =============================================================================
 
-function md5(buf: Buffer): string {
-  return createHash('md5').update(buf).digest('hex');
-}
-
 export function parseLabels(value: string): string[] | undefined {
   if (!value) return undefined;
   return value
@@ -50,13 +45,13 @@ function toJson(data: unknown): INodeExecutionData['json'] {
   return data as INodeExecutionData['json'];
 }
 
-// True when a transport error carries HTTP 429. The legacy `request` helper
-// reports the status as `httpCode` (string) or `statusCode` (number) depending
-// on the failure path, so both are read.
-function isRateLimited(error: unknown): boolean {
+// The HTTP status a transport error carries. The legacy `request` helper
+// reports it as `httpCode` (string) or `statusCode` (number) depending on the
+// failure path, so both are read.
+function httpStatus(error: unknown): number | undefined {
   const code =
     (error as { httpCode?: string }).httpCode ?? (error as { statusCode?: number }).statusCode;
-  return code === '429' || code === 429;
+  return code === undefined ? undefined : Number(code);
 }
 
 // Unwrap a resource-locator value when it appears inside a collection.
@@ -215,17 +210,19 @@ const WIRE = Symbol.for('shipstatic.wire');
 function apiError(
   ctx: IExecuteFunctions,
   error: unknown,
-  options?: object,
+  options?: { message?: string; description?: string },
   itemIndex?: number,
 ): NodeApiError {
   const wrapped = new NodeApiError(ctx.getNode(), error as JsonObject, options);
   const wire = readWireError(error);
   if (wire) (wrapped as unknown as Record<symbol, unknown>)[WIRE] = wire;
-  // Set EXPLICITLY rather than via the constructor's `options.itemIndex`.
-  // `NodeApiError` honours that option in the CJS build and drops it in the
-  // ESM one vitest loads — measured, 2026-08-19 — and a field n8n's error UI
-  // reads should not depend on which build resolved. Assigning here also keeps
-  // the assignment OUT of a catch site, which is what let the re-throw go.
+  // Set EXPLICITLY rather than via the constructor's options, for
+  // `description` and `itemIndex` alike. `NodeApiError` honours both in the
+  // CJS build and drops them in the ESM one vitest loads (measured), and a
+  // field n8n's error UI reads should not depend on which build resolved.
+  // Assigning here also keeps the assignment OUT of a catch site, which is
+  // what let the re-throw go.
+  if (options?.description !== undefined) wrapped.description = options.description;
   if (itemIndex !== undefined) {
     wrapped.context = { ...wrapped.context, itemIndex };
   }
@@ -359,11 +356,23 @@ async function uploadDeployment(
     // it instead of leaving the caller to retry blindly. An authenticated 429
     // is a different limit with different advice, so the hint is conditional
     // on the credential being absent.
-    if (!token && isRateLimited(error)) {
+    if (!token && httpStatus(error) === 429) {
       throw apiError(ctx, error, {
         message: 'Public deploy rate limit exceeded',
         description:
           'Add a ShipStatic API key (free at https://my.shipstatic.com/api-key) for higher limits, or wait and retry later.',
+      });
+    }
+    // This node sends a deployment in ONE request, and one request has a
+    // ceiling. The API's own sentence names updating ship, which is right for
+    // the CLI and wrong here, so the node says what is true for a workflow:
+    // the CLI sends a bigger site in several requests. No number is stated,
+    // so there is no copy of the ceiling to keep in step with its owner.
+    if (httpStatus(error) === 413) {
+      throw apiError(ctx, error, {
+        message: 'This site is too big to send in one request',
+        description:
+          'This node sends a whole site in one request. To ship a bigger one, use the ShipStatic CLI, which sends it in several: npx @shipstatic/ship ./dist',
       });
     }
     throw apiError(ctx, error);
@@ -385,6 +394,23 @@ async function uploadDeployment(
  * when `index.html` is absent or over the size the platform answers "no" to,
  * and fail the deploy when the question itself fails.
  */
+/**
+ * The deploy request's multipart field names, the ones this node sends.
+ * Restated from `DEPLOY_FIELDS` in `@shipstatic/types`, which the zero-import
+ * rule forbids reading; `tests/contract.test.ts` holds each to its owner.
+ *
+ * No manifest is among them, by decision: the node sends a whole site in one
+ * request, which needs none, and the API hashes what it receives. A site
+ * larger than one request is the CLI's (the 413 relay above says so).
+ */
+export const DEPLOY_FORM = {
+  FILES: 'files[]',
+  LABELS: 'labels',
+  VIA: 'via',
+  PASSWORD: 'password',
+  TTL: 'ttl',
+} as const;
+
 // Restated from `DEPLOYMENT_CONFIG_FILENAME`; fenced against it. It gates both
 // the skip-when-the-user-shipped-one check and the appended filename, so drift
 // would silently break the SPA mirror's own escape hatch.
@@ -499,7 +525,7 @@ async function searchPage(
  * has to name the shape actually wanted, or the agent has nothing to correct
  * toward.
  */
-function readFilesInput(ctx: IExecuteFunctions): { path: string; content: Buffer; md5: string }[] {
+function readFilesInput(ctx: IExecuteFunctions): { path: string; content: Buffer }[] {
   const raw = ctx.getNodeParameter('files', 0);
   const fail = (message: string, description?: string): never => {
     throw new NodeOperationError(ctx.getNode(), message, {
@@ -542,7 +568,7 @@ function readFilesInput(ctx: IExecuteFunctions): { path: string; content: Buffer
     );
   }
 
-  const collected: { path: string; content: Buffer; md5: string }[] = [];
+  const collected: { path: string; content: Buffer }[] = [];
   for (const [index, entry] of (parsed as unknown[]).entries()) {
     const where = `File ${index + 1}`;
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -583,11 +609,7 @@ function readFilesInput(ctx: IExecuteFunctions): { path: string; content: Buffer
       buffer = Buffer.from(content as string, 'utf-8');
     }
 
-    collected.push({
-      path: path as string,
-      content: buffer as Buffer,
-      md5: md5(buffer as Buffer),
-    });
+    collected.push({ path: path as string, content: buffer as Buffer });
   }
 
   return collected;
@@ -602,7 +624,7 @@ async function handleDeploy(
   const options = ctx.getNodeParameter('options', 0) as IDataObject;
 
   // 1. Collect files — from binary data, text content, or a JSON file list
-  const files: { path: string; content: Buffer; md5: string }[] = [];
+  const files: { path: string; content: Buffer }[] = [];
 
   if (input === 'binary') {
     const binaryPropertyName = ctx.getNodeParameter('binaryPropertyName', 0) as string;
@@ -612,11 +634,7 @@ async function handleDeploy(
       if (buffer.length === 0) continue;
       const dir = (binaryData.directory || '').replace(/^\/+/, '');
       const fileName = binaryData.fileName || `file_${i}`;
-      files.push({
-        path: dir ? `${dir}/${fileName}` : fileName,
-        content: buffer,
-        md5: md5(buffer),
-      });
+      files.push({ path: dir ? `${dir}/${fileName}` : fileName, content: buffer });
     }
     // 1a. Binary only — strip the longest shared directory so a build output's
     //     URLs read as the user expects. Filesystem-derived paths carry an
@@ -645,7 +663,7 @@ async function handleDeploy(
       });
     }
     const content = Buffer.from(fileContent, 'utf-8');
-    files.push({ path, content, md5: md5(content) });
+    files.push({ path, content });
   }
 
   if (files.length === 0) {
@@ -663,29 +681,29 @@ async function handleDeploy(
     // Byte-identical with the SDK's generated config (no trailing newline),
     // so one site gets one ship.json whichever surface deploys it.
     const content = Buffer.from(JSON.stringify(SPA_CONFIG, null, 2), 'utf-8');
-    files.push({ path: SHIP_JSON, content, md5: md5(content) });
+    files.push({ path: SHIP_JSON, content });
   }
 
-  // 4. Build formData — after the SPA step, so its checksum rides along
+  // 4. Build formData, after the SPA step so a generated config rides along.
+  //    The API hashes what it receives, so no digest is sent.
   const formData: IDataObject = {
-    'files[]': files.map((f) => ({
+    [DEPLOY_FORM.FILES]: files.map((f) => ({
       value: f.content,
       options: { filename: f.path, contentType: 'application/octet-stream' },
     })),
-    checksums: JSON.stringify(files.map((f) => f.md5)),
-    via: VIA,
+    [DEPLOY_FORM.VIA]: VIA,
   };
   const labels = parseLabels(options.labels as string);
-  if (labels) formData.labels = JSON.stringify(labels);
+  if (labels) formData[DEPLOY_FORM.LABELS] = JSON.stringify(labels);
   const password = (options.password as string | undefined)?.trim();
-  if (password) formData.password = password;
+  if (password) formData[DEPLOY_FORM.PASSWORD] = password;
   // Sent iff the user ADDED the option — key presence, never truthiness. A `0`
   // fed by an expression forwards and the server refuses it with its own
   // sentence, which is the whole point: this node is not a second validator of
   // a range it does not own. (The truthiness gate `labels`/`password` use is
   // right for them — an empty string is absence of intent — and wrong here,
   // where `0` is a value the user typed.)
-  if (options.ttl !== undefined) formData.ttl = String(options.ttl);
+  if (options.ttl !== undefined) formData[DEPLOY_FORM.TTL] = String(options.ttl);
 
   // 5. Upload — with the token when one is configured, anonymously when not
   const idempotencyKey = (options.idempotencyKey as string | undefined)?.trim();
