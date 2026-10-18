@@ -95,8 +95,10 @@ Two things to know before you reach for it:
 ### Retries that do not deploy twice
 
 n8n's **Retry On Fail** makes a workflow the most likely thing to retry a deploy
-automatically. Set an **Idempotency Key** under Options and a retry replays the
-original deployment instead of creating a second one:
+automatically. With a Token, set an **Idempotency Key** under Options and a
+retry replays the original deployment instead of creating a second one. A key
+replays only within the account that sent it, so without a Token it is ignored
+and each run creates a new deployment:
 
 ```
 {{ $execution.id }}

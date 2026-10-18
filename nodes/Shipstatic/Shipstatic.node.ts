@@ -1287,7 +1287,7 @@ export class Shipstatic implements INodeType {
             // So the example moved into the description, where no rule
             // applies and the reader sees it just as well.
             description:
-              'Key the ATTEMPT, never the try. A retry carrying the same key replays the original deployment instead of creating a second one — which matters most here, because Retry On Fail is a core n8n feature and makes this the platform surface most likely to retry automatically. Use a value that is stable across retries of one logical deploy and different for the next one; an expression reading the execution ID is the usual choice, and a commit SHA works too. Omit it and every run deploys afresh.',
+              'Key the ATTEMPT, never the try. With a Token, a retry carrying the same key replays the original deployment instead of creating a second one, which matters most here, because Retry On Fail is a core n8n feature and makes this the platform surface most likely to retry automatically. Use a value that is stable across retries of one logical deploy and different for the next one; an expression reading the execution ID is the usual choice, and a commit SHA works too. Omit it, or deploy without a Token, and every run deploys afresh: a key replays only within the account that sent it.',
           },
           LABELS_OPTION,
           {
