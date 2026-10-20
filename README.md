@@ -1,15 +1,10 @@
 # n8n-nodes-shipstatic
 
-n8n community node for [ShipStatic](https://shipstatic.com) — deploy static websites, landing pages, and prototypes instantly from n8n workflows.
+n8n community node for [ShipStatic](https://shipstatic.com). Deploy static websites, landing pages, and prototypes instantly from n8n workflows. Free, no account needed.
 
-## Requirements
+## Try it in seconds, no account needed
 
-**Requires n8n 2.0 or newer** (Node.js 20.19+). The node's code compiles as far
-back as n8n 1.85, but 2.x is what it is tested against and what n8n Cloud runs.
-
-## Installation
-
-In your n8n instance, go to **Settings > Community Nodes** and install:
+First, install the node. In your n8n instance, go to **Settings > Community Nodes** and install:
 
 ```
 n8n-nodes-shipstatic
@@ -25,28 +20,26 @@ npm install n8n-nodes-shipstatic
 
 Restart n8n after installing.
 
-## Deploy: free, no account needed
-
-Add a **ShipStatic** node to your workflow. No credentials to configure.
+Then add a **ShipStatic** node to your workflow. No credentials to configure.
 
 Set Resource to **Deployment**, Operation to **Deploy**, then pick where the
 files come from with **Input**:
 
-**Binary Files** (default) — the workflow-native path.
+**Binary Files** (default): the workflow-native path.
 
 1. Connect binary files from an upstream node (HTTP Request, Google Drive,
    Read/Write Files, Convert to File)
-2. Run — you get a live URL on `*.shipstatic.com`
+2. Run, and you get a live link on `*.shipstatic.com`
 
 Each input item becomes one file, and a shared leading directory is stripped,
 so a `dist/` build deploys as `index.html` rather than `dist/index.html`.
 
-**Text Content** — one file, typed or wired in.
+**Text Content**: one file, typed or wired in.
 
 1. Paste or wire your HTML into **File Content**
-2. Run — deployed as `index.html` by default (change it with **File Name**)
+2. Run: it's published as `index.html` by default (change it with **File Name**)
 
-**Files (JSON)** — a whole site as data.
+**Files (JSON)**: a whole site as data.
 
 Give it an array of files:
 
@@ -57,15 +50,13 @@ Give it an array of files:
 ]
 ```
 
-Content is plain text by default. For genuinely binary files — images, fonts —
+Content is plain text by default. For binary files (images, fonts),
 add `"encoding": "base64"` to that entry and pass base64 bytes. Paths are used
 exactly as written, so this mode never rewrites them.
 
-That is it. Your site is live instantly. No token, no sign-up, no configuration.
+That's all: no token, no sign-up, no configuration. You get back a link you can share right away, and a claim link. The site stays up for 3 days, and opening the claim link keeps it for good.
 
-Deployments made without credentials are public and expire in 3 days. The output includes a **claim URL** — visit it to keep the site permanently.
-
-Want a private site? Add a **Password** under the Deploy operation's Options (6–128 characters; whitespace significant). Visitors will be prompted to unlock before viewing, including on any custom domains pointing at the deployment.
+Want it private? Add a **Password** under the Deploy operation's Options (6–128 characters; spaces count). It's ShipStatic's built-in password protection: visitors have to type the password before they see anything, on the site's link and on any custom domain pointing at it.
 
 ### Single-page apps just work
 
@@ -75,21 +66,35 @@ config the site needs, so `/about` resolves to your app instead of returning
 apps.
 
 Two ways to take control: turn **Single-Page App Routing** off under Options, or
-include your own `ship.json` among the deployed files — the node never
+include your own `ship.json` among the deployed files: the node never
 overwrites one you shipped yourself.
+
+## Keep your sites with a free account
+
+Everything above works with no account. A free account keeps your sites for good, lets you use your own domain, and shows you everything you've published in one place. To connect one here:
+
+1. Get a free key at [my.shipstatic.com/api-key](https://my.shipstatic.com/api-key)
+2. In n8n, go to **Credentials > New Credential > ShipStatic API**
+3. Paste it into **Token** and save. n8n checks the connection right away
+
+### One credential slot
+
+The field is called **Token** and your API key is what goes in it: one
+credential, two names. Paste a `ship-…` key and every operation in this node
+works; n8n verifies the connection when you save.
 
 ### Deployments that clean up after themselves
 
 Deploying a preview for every pull request, or a nightly build nobody needs to
 keep? Add **TTL** under Options and the deployment expires on its own after
-that many seconds — the platform reclaims it, and you are not left pruning.
+that many seconds. The platform removes it, so you aren't left cleaning up.
 
 Two things to know before you reach for it:
 
 - **It needs credentials.** An anonymous deployment already expires on the
   platform's schedule, so a TTL on one is refused rather than quietly ignored.
 - **A deployment with a TTL cannot be linked to a custom domain.** A domain is
-  a commitment and a deadline is its opposite — deploy without a TTL if the
+  a commitment and a deadline is its opposite, so deploy without a TTL if the
   site needs one.
 
 ### Retries that do not deploy twice
@@ -104,22 +109,8 @@ and each run creates a new deployment:
 {{ $execution.id }}
 ```
 
-Key the *attempt*, never the try — a value stable across retries of one logical
+Key the *attempt*, never the try: a value stable across retries of one logical
 deploy and different for the next. Leave it empty and every run deploys afresh.
-
-## All operations: free API key
-
-For permanent deployments and full control over your sites and domains, add a free API key:
-
-1. Get a free key at [my.shipstatic.com/api-key](https://my.shipstatic.com/api-key)
-2. In n8n, go to **Credentials > New Credential > ShipStatic API**
-3. Paste it into **Token** and save — n8n verifies the connection automatically
-
-### One credential slot
-
-The field is called **Token** and your API key is what goes in it — one
-credential, two names. Paste a `ship-…` key and every operation in this node
-works; n8n verifies the connection when you save.
 
 ### Listing
 
@@ -132,7 +123,7 @@ dropdowns page the same way as you scroll them.
 
 | Operation  | Description                                                                                            |
 | ---------- | ------------------------------------------------------------------------------------------------------ |
-| **Delete** | Delete a deployment and all its files — the response reports the deletion state |
+| **Delete** | Delete a deployment and all its files; the response reports the deletion state |
 | **Deploy** | Publish files and get a live URL instantly                                                             |
 | **Get**    | Get deployment details including URL, status, file count, size, labels, and password protection state |
 | **List**   | List all deployments with their URLs, status, labels, and password protection state                   |
@@ -151,16 +142,21 @@ completes.
 | **Get**      | Get domain details including linked deployment, verification status, and labels |
 | **List**     | List all domains with their linked deployment and verification status           |
 | **Records**  | Get the DNS records you need to configure at your DNS provider                  |
-| **Set**      | Create or update a custom domain — reserve, link, switch deployments, or update labels |
+| **Set**      | Create or update a custom domain: reserve, link, switch deployments, or update labels |
 | **Share**    | Get a shareable setup hash so someone else can view the required DNS records    |
 | **Validate** | Check if a domain name is valid and available before connecting it              |
-| **Verify**   | Queue a DNS check after you configure the records — the domain's status updates once it runs |
+| **Verify**   | Queue a DNS check after you configure the records; the domain's status updates once it runs |
 
 ### Account
 
 | Operation   | Description                                               |
 | ----------- | --------------------------------------------------------- |
 | **Whoami**  | Get your account details including email, plan, and usage |
+
+## Requirements
+
+**Requires n8n 2.0 or newer** (Node.js 20.19+). The node's code compiles as far
+back as n8n 1.85, but 2.x is what it is tested against and what n8n Cloud runs.
 
 ## Example workflows
 
@@ -174,14 +170,14 @@ completes.
 
 ### Scheduled redeployment
 
-Use an n8n **Schedule Trigger** to redeploy a site on a recurring basis — useful for sites that pull content from external sources.
+Use an n8n **Schedule Trigger** to redeploy a site on a recurring basis, useful for sites that pull content from external sources.
 
 ## Picking deployments and domains
 
 Deployment and Domain fields use n8n's **Resource Locator** with two modes:
 
-- **From List** — search-as-you-type through your existing deployments or domains
-- **By Hostname** / **By Name** — type the value directly (useful for new domains via Set/Validate, or for piping in dynamic values from previous nodes)
+- **From List**: search-as-you-type through your existing deployments or domains
+- **By Hostname** / **By Name**: type the value directly (useful for new domains via Set/Validate, or for piping in dynamic values from previous nodes)
 
 You can also switch any field to **Expression** mode to use values from upstream nodes.
 
@@ -193,7 +189,7 @@ deployment status as part of a conversation.
 
 **Use Files (JSON) for agent deploys.** An agent fills a node's *parameters*;
 it has no way to hand over binary items, so Binary Files mode is not reachable
-from a tool call. Files (JSON) is — point the **Files** field at the agent and
+from a tool call. Files (JSON) is: point the **Files** field at the agent and
 it can write a whole multi-file site:
 
 ```json
@@ -219,7 +215,7 @@ changes four things in saved workflows:
 
 1. **Re-enter your credential.** The field is now a single **Token** slot that
    takes your API key. A credential created for 0.x
-   stored its value in an "API Key" field that 1.x does not read — the node
+   stored its value in an "API Key" field that 1.x does not read, so the node
    refuses to deploy rather than silently falling back to an anonymous public
    deployment, so you will see a clear error until you re-enter it.
 2. **Re-pick your operations.** Operation identifiers are now the platform's
@@ -229,10 +225,10 @@ changes four things in saved workflows:
    rather than doing something unexpected.
 3. **Re-select your Deploy input mode.** The Binary File toggle became the
    **Input** selector (Binary Files / Text Content / Files (JSON)). Workflows
-   that used the toggle in its OFF position — text content — do not carry over
+   that used the toggle in its OFF position (text content) do not carry over
    and will default to Binary Files.
 4. **Keyless deploys changed internally.** They no longer mint a token first.
-   Nothing to do; anonymous deploys keep working, and they work again — this is
+   Nothing to do; anonymous deploys keep working, and they work again. This was
    the break that made 0.x's headline feature stop functioning.
 
 ## Resources
