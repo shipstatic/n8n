@@ -92,14 +92,12 @@ function liveContext(params: Record<string, any>, token?: string) {
     helpers: {
       assertBinaryData: () => ({ fileName: 'index.html' }),
       getBinaryDataBuffer: async () => Buffer.from(params.__html ?? '<h1>live</h1>'),
-      // The legacy helper carries BOTH shapes: `formData` for the multipart
-      // deploy, `body` + `json: true` for the SPA check. Handling only the
-      // first makes `/spa-check` throw, and the deploy fails with it.
+      // The legacy helper carries the one multipart request, the deploy.
       request: (opts: any) =>
         send(opts.uri, {
           method: opts.method,
           headers: opts.headers,
-          body: opts.formData ? toMultipart(opts.formData) : JSON.stringify(opts.body),
+          body: toMultipart(opts.formData),
         }),
       httpRequestWithAuthentication: (_credType: string, opts: any) =>
         send(opts.url, {
@@ -214,7 +212,7 @@ describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
   it('a React-shaped build gets the routing config from the platform', async () => {
     // The whole finding: without this, a workflow deploying a React build
     // serves 404s on every route but `/`. Only the real API can say whether
-    // its classifier answers the `spa` field the node sends.
+    // it asks a deploy that names no `spa`.
     const [item] = await run(
       deployParams({
         input: 'text',
@@ -253,8 +251,7 @@ describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
           { path: 'index.html', content: html },
           { path: 'pixel.gif', content: gifBase64, encoding: 'base64' },
         ],
-        // The site is deliberately NOT a SPA, so a silent `ship.json` append
-        // would show up as a failure here.
+        // The opt-out, so a platform config would show up in the count.
         options: { spaDetect: false },
       }),
       TOKEN,

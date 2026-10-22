@@ -636,10 +636,10 @@ async function handleDeploy(
   // right for them — an empty string is absence of intent — and wrong here,
   // where `0` is a value the user typed.)
   if (options.ttl !== undefined) formData[DEPLOY_FORM.TTL] = String(options.ttl);
-  // The single-page question, asked of the platform as every client asks it:
-  // when the files are an app and ship no ship.json, the platform adds the
-  // routing config itself, so a React build deep-links instead of 404ing.
-  if (options.spaDetect !== false) formData[DEPLOY_FORM.SPA] = 'true';
+  // The platform asks every deploy the single-page question and, when the
+  // files are an app that ships no ship.json, adds the routing config itself,
+  // so a React build deep-links instead of 404ing. Only the opt-out is sent.
+  if (options.spaDetect === false) formData[DEPLOY_FORM.SPA] = 'false';
 
   // 4. Upload — with the token when one is configured, anonymously when not
   const idempotencyKey = (options.idempotencyKey as string | undefined)?.trim();

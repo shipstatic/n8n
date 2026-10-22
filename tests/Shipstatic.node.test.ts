@@ -472,12 +472,12 @@ describe('Deploy — file collection & formData', () => {
     ]);
   });
 
-  it('asks the single-page question over files-mode input like every other mode', async () => {
+  it('leaves the single-page question to the platform in files mode, like every mode', async () => {
     const ctx = filesCtx([{ path: 'index.html', content: '<div id="root"></div>' }]);
 
     await node.execute.call(ctx);
 
-    expect(getFormData(ctx).spa).toBe('true');
+    expect(getFormData(ctx).spa).toBeUndefined();
   });
 
   it('sends ttl in formData when the option was added', async () => {
@@ -587,7 +587,7 @@ describe('Deploy — file collection & formData', () => {
 
     await node.execute.call(ctx);
 
-    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'spa', 'via']);
+    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'via']);
   });
 
   it('single file deploy preserves path without stripping', async () => {
@@ -665,15 +665,16 @@ describe('Deploy — SPA routing', () => {
   const filenames = (ctx: any) =>
     (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
 
-  it('asks the platform the single-page question, in the deploy itself', async () => {
-    // Without it, a React build deployed from a workflow serves 404s on every
-    // route but `/`, on the one surface whose users are least equipped to
-    // know that `ship.json` is the remedy. The platform writes the config.
+  it('leaves the single-page question to the platform: one request, no field', async () => {
+    // The platform asks every deploy, so a React build deployed from a
+    // workflow deep-links instead of serving 404s on every route but `/`,
+    // on the one surface whose users are least equipped to know that
+    // `ship.json` is the remedy. The platform writes the config.
     const ctx = createDeployContext();
 
     await node.execute.call(ctx);
 
-    expect(getFormData(ctx).spa).toBe('true');
+    expect(getFormData(ctx).spa).toBeUndefined();
     expect(ctx.helpers.request.mock.calls.map((c: any[]) => c[0].uri)).toEqual([
       'https://api.shipstatic.com/deployments',
     ]);
@@ -687,12 +688,12 @@ describe('Deploy — SPA routing', () => {
     expect(filenames(ctx)).not.toContain('ship.json');
   });
 
-  it('the toggle turns the question off', async () => {
+  it('the toggle sends the opt-out', async () => {
     const ctx = createDeployContext({ options: { spaDetect: false } });
 
     await node.execute.call(ctx);
 
-    expect(getFormData(ctx).spa).toBeUndefined();
+    expect(getFormData(ctx).spa).toBe('false');
   });
 });
 
@@ -882,8 +883,7 @@ describe('Deploy — error handling', () => {
     const ctx = createDeployContext();
     const httpError: any = new Error('Unauthorized');
     httpError.httpCode = '401';
-    ctx.helpers.request.mockImplementation(async (opts: any) => {
-      if (opts.uri.endsWith('/spa-check')) return { isSPA: false };
+    ctx.helpers.request.mockImplementation(async () => {
       throw httpError;
     });
 

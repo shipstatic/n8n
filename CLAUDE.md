@@ -426,9 +426,8 @@ n8n's owned `error` key; the credential type id `shipstaticApi`.
 
 **`spaDetect` is a positive match, not an oversight**: it is the published
 option name (`DeploymentUploadOptions.spaDetect` in `@shipstatic/types`, and
-the CLI's `--no-spa-detect`). It decides whether the node sends the `spa` wire
-field; the option and the field are two names for two layers, and both are
-the platform's own.
+the CLI's `--no-spa-detect`). Off, the node sends the `spa=false` opt-out; the option
+and the field are two names for two layers, and both are the platform's own.
 
 ### Deploy — Three Input Modes
 
@@ -497,8 +496,9 @@ All three modes use n8n's `request` helper with the `formData` option — the sa
 - `password` — optional plaintext (6–128 chars); the API hashes it server-side
 - `ttl` — optional lifetime in SECONDS, stringified (a multipart body is all
   strings; the API's `collectTtlFromFormData` does the `Number()`)
-- `spa` — `'true'` unless `spaDetect` is off: the platform asks the
-  single-page question of the files and writes the routing config itself
+- `spa` — `'false'` when `spaDetect` is off, and absent otherwise: the
+  platform asks every deploy the single-page question and writes the routing
+  config itself, so the opt-out is the one value there is to send
 
 **TTL's absence rule is the one place the Labels pattern does NOT apply, and
 the difference is worth stating because it looks like an inconsistency.**
@@ -708,10 +708,10 @@ and it was missed by the wave that fixed the success path.
 
 ### The single-page question
 
-The platform answers it and the node asks it, exactly as the SDK does for the
-CLI, both MCP transports and the VS Code extension: the deploy carries
-`spa=true` unless `spaDetect` is off, and when the files are an app the API
-writes the routing config (`cloudflare/api/src/lib/platform-files.ts`). So a
+The platform asks it of every deploy, exactly as for the CLI, both MCP
+transports and the VS Code extension: the node sends `spa=false` when
+`spaDetect` is off and nothing otherwise, and when the files are an app the
+API writes the routing config (`cloudflare/api/src/lib/platform-files.ts`). So a
 React build deployed from a workflow deep-links instead of serving 404s on
 every route but `/`, on the one surface whose users are least equipped to know
 that `ship.json` is the remedy, and it costs no request of its own. The node
@@ -736,7 +736,7 @@ verdict rather than a silence:
 | `GET /ping`, `GET /limits` | **Refuse** — already recorded below (diagnostics, not workflow steps) |
 | `GET /account/consent`, `PUT /account/key`, `POST /account/claim`, `DELETE /account` | **Refuse.** Account *administration*, not automation. `PUT /key` mints a credential (same reason as `/tokens`), `DELETE /account` is destructive-irreversible with no workflow use, and claiming is a human act on a one-time URL the deploy response already hands over |
 | `GET /activities` | **Refuse.** An audit feed for the dashboard. A workflow wanting deployment state reads the deployment |
-| `GET /domains-check`, `POST /setup`, `POST /upload`, `POST /spa-check`, `/billing/*`, `/webhooks/*`, `/unsubscribe`, `/admin/*` | **Refuse by standing law**: first-party-only surfaces, and `/spa-check` the pre-flight older clients ask, which the `spa` field replaces. `/upload` in particular is the build door; `/deployments` is the public contract, and that split is the platform's, not this node's |
+| `GET /domains-check`, `POST /setup`, `POST /upload`, `POST /spa-check`, `/billing/*`, `/webhooks/*`, `/unsubscribe`, `/admin/*` | **Refuse by standing law**: first-party-only surfaces, and `/spa-check` the question asked without deploying, which the deploy asks itself. `/upload` in particular is the build door; `/deployments` is the public contract, and that split is the platform's, not this node's |
 
 **The node's surface is exactly the hosted MCP's fifteen.** That convergence is
 worth stating because it is the check on both: two independently-maintained
