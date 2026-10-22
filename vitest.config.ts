@@ -90,6 +90,12 @@ export default defineConfig({
        * Raised per the ratchet's own rule, or the next regression hides in
        * the slack this improvement created.
        *
+       * 98.64 -> 98.63 (216/219) when the node stopped asking `/spa-check`
+       * itself and began sending the `spa` field: the question's own covered
+       * arms (its size guard, its failure relay) left with it. A dip with the
+       * uncovered set unchanged, still exactly the three `operation` chain
+       * `else` arms, so the floor follows the ratio down by the ratchet's rule.
+       *
        * NOTE: thresholds catch coverage DECAY. They cannot catch a test that
        * asserts nothing; a tautology neither raises nor lowers coverage. The
        * fences in `tests/contract.test.ts` are what hold the contracts a
@@ -97,7 +103,7 @@ export default defineConfig({
        */
       thresholds: {
         statements: 100,
-        branches: 98.64,
+        branches: 98.63,
         functions: 100,
         lines: 100,
       },

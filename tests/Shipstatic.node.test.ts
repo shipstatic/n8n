@@ -4,7 +4,6 @@ import {
   extractResourceLocatorValue,
   parseLabels,
   Shipstatic,
-  SPA_MAX_INDEX_BYTES,
   stripCommonPrefix,
 } from '../nodes/Shipstatic/Shipstatic.node';
 import {
@@ -329,16 +328,14 @@ describe('Deploy — authentication', () => {
   it('no token round-trip precedes the deploy — the mint is gone', async () => {
     // The 1.x node minted an agent token through `POST /tokens/agent` before
     // every keyless deploy. The 2.x API deleted that endpoint; the fix was a
-    // deletion, and this proves the deletion took. The SPA check is the only
-    // other call the deploy path makes, and it is unauthenticated by design —
-    // so the requests are ENUMERATED rather than counted. A count would let a
-    // future round-trip slip in behind the same number.
+    // deletion, and this proves the deletion took. The requests are
+    // ENUMERATED rather than counted: a count would let a future round-trip
+    // slip in behind the same number.
     const ctx = createDeployContext({}, null);
 
     await node.execute.call(ctx);
 
     expect(ctx.helpers.request.mock.calls.map((c: any[]) => c[0].uri)).toEqual([
-      'https://api.shipstatic.com/spa-check',
       'https://api.shipstatic.com/deployments',
     ]);
   });
@@ -375,7 +372,7 @@ describe('Deploy — authentication', () => {
 describe('Deploy — file collection & formData', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('sends via and parsed labels in formData; never sets server-processing flags', async () => {
+  it('sends via and parsed labels in formData; never asks for a build', async () => {
     const ctx = createDeployContext({ options: { labels: 'prod, v2' } });
 
     await node.execute.call(ctx);
@@ -384,8 +381,7 @@ describe('Deploy — file collection & formData', () => {
     expect(fd.via).toBe('n8n');
     expect(fd.labels).toBe('["prod","v2"]');
     expect(fd.password).toBeUndefined();
-    // /deployments is a pure pipe — integrations must not set spa/build/prerender.
-    expect(fd.spa).toBeUndefined();
+    // /deployments builds nothing; build and prerender are first-party flags.
     expect(fd.build).toBeUndefined();
     expect(fd.prerender).toBeUndefined();
   });
@@ -476,18 +472,12 @@ describe('Deploy — file collection & formData', () => {
     ]);
   });
 
-  it('runs SPA detection over files-mode input like every other mode', async () => {
+  it('asks the single-page question over files-mode input like every other mode', async () => {
     const ctx = filesCtx([{ path: 'index.html', content: '<div id="root"></div>' }]);
-    ctx.helpers.request.mockImplementation((opts: any) =>
-      opts.uri?.endsWith('/spa-check')
-        ? Promise.resolve({ isSPA: true })
-        : Promise.resolve({ deployment: 'x.shipstatic.com' }),
-    );
 
     await node.execute.call(ctx);
 
-    const names = (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
-    expect(names).toContain('ship.json');
+    expect(getFormData(ctx).spa).toBe('true');
   });
 
   it('sends ttl in formData when the option was added', async () => {
@@ -597,7 +587,7 @@ describe('Deploy — file collection & formData', () => {
 
     await node.execute.call(ctx);
 
-    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'via']);
+    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'spa', 'via']);
   });
 
   it('single file deploy preserves path without stripping', async () => {
@@ -672,165 +662,37 @@ describe('Deploy — file collection & formData', () => {
 describe('Deploy — SPA routing', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  /** Route the deploy mock: /spa-check answers `isSPA`, /deployments succeeds. */
-  function spaCtx(isSPA: boolean, overrides: Record<string, any> = {}) {
-    const ctx = createDeployContext(overrides);
-    ctx.helpers.request.mockImplementation(async (opts: any) =>
-      opts.uri.endsWith('/spa-check') ? { isSPA } : DEPLOYMENT,
-    );
-    return ctx;
-  }
-
   const filenames = (ctx: any) =>
     (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
 
-  it('appends a routing config when the API detects a single-page app', async () => {
-    // Without this, a React build deployed from a workflow serves 404s on
-    // every route but `/` — on the one surface whose users are least equipped
-    // to know that `ship.json` is the remedy.
-    const ctx = spaCtx(true);
-
-    await node.execute.call(ctx);
-
-    expect(filenames(ctx)).toContain('ship.json');
-    const config = (getFormData(ctx)['files[]'] as any[]).find(
-      (f) => f.options.filename === 'ship.json',
-    );
-    expect(JSON.parse(config.value.toString())).toEqual({
-      rewrites: [{ source: '/(.*)', destination: '/index.html' }],
-    });
-    // Byte parity with the SDK's generated config: two-space JSON, no
-    // trailing newline. One site, one ship.json, whichever surface deploys.
-    expect(config.value.toString().endsWith('\n')).toBe(false);
-  });
-
-  it('rides in the same request as the files it routes', async () => {
-    // The config is appended BEFORE formData is built, so it is one of the
-    // files the API receives rather than a request of its own.
-    const ctx = spaCtx(true);
-
-    await node.execute.call(ctx);
-
-    const names = (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
-    expect(names).toContain('ship.json');
-  });
-
-  it('adds nothing when the app is not a single-page app', async () => {
-    const ctx = spaCtx(false);
-
-    await node.execute.call(ctx);
-
-    expect(filenames(ctx)).not.toContain('ship.json');
-  });
-
-  it('never overrides a config the user shipped themselves', async () => {
-    const ctx = spaCtx(true);
-    ctx.getInputData.mockReturnValue([{ json: {} }, { json: {} }]);
-    ctx.helpers.assertBinaryData
-      .mockReturnValueOnce({ fileName: 'index.html' })
-      .mockReturnValueOnce({ fileName: 'ship.json' });
-    ctx.helpers.getBinaryDataBuffer
-      .mockResolvedValueOnce(Buffer.from('<html></html>'))
-      .mockResolvedValueOnce(Buffer.from('{"rewrites":[]}'));
-
-    await node.execute.call(ctx);
-
-    const configs = filenames(ctx).filter((f: string) => f === 'ship.json');
-    expect(configs).toHaveLength(1);
-    // And the check never ran — the user already decided.
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/spa-check')),
-    ).toHaveLength(0);
-  });
-
-  it('the toggle turns it off, and skips the round-trip entirely', async () => {
-    const ctx = spaCtx(true, { options: { spaDetect: false } });
-
-    await node.execute.call(ctx);
-
-    expect(filenames(ctx)).not.toContain('ship.json');
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/spa-check')),
-    ).toHaveLength(0);
-  });
-
-  it('a question that fails is the deploy failing: nothing is uploaded', async () => {
-    // The SDK's own posture: an undecided deploy must not ship, because an
-    // app deployed without its answer 404s on reload behind a success.
+  it('asks the platform the single-page question, in the deploy itself', async () => {
+    // Without it, a React build deployed from a workflow serves 404s on every
+    // route but `/`, on the one surface whose users are least equipped to
+    // know that `ship.json` is the remedy. The platform writes the config.
     const ctx = createDeployContext();
-    ctx.helpers.request.mockImplementation(async (opts: any) => {
-      if (opts.uri.endsWith('/spa-check')) throw new Error('detector down');
-      return DEPLOYMENT;
-    });
-
-    await expect(node.execute.call(ctx)).rejects.toThrow('detector down');
-
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/deployments')),
-    ).toHaveLength(0);
-  });
-
-  it('skips the check when there is no index.html to read', async () => {
-    const ctx = spaCtx(true, {
-      input: 'text',
-      fileContent: 'hello',
-      fileName: 'readme.txt',
-    });
 
     await node.execute.call(ctx);
 
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/spa-check')),
-    ).toHaveLength(0);
+    expect(getFormData(ctx).spa).toBe('true');
+    expect(ctx.helpers.request.mock.calls.map((c: any[]) => c[0].uri)).toEqual([
+      'https://api.shipstatic.com/deployments',
+    ]);
   });
 
-  it('sends the deployed paths and the index contents, like the SDK does', async () => {
-    const ctx = spaCtx(false);
+  it('writes no config itself: the files travel as they were given', async () => {
+    const ctx = createDeployContext();
 
     await node.execute.call(ctx);
 
-    const check = ctx.helpers.request.mock.calls.find((c: any[]) =>
-      c[0].uri.endsWith('/spa-check'),
-    );
-    expect(check[0].body).toEqual({ files: ['index.html'], index: '<html></html>' });
+    expect(filenames(ctx)).not.toContain('ship.json');
   });
 
-  it.each([
-    ['with a credential configured', undefined],
-    ['with none', null],
-  ])('asks the question without a credential, %s: the route reads none', async (_w, creds) => {
-    const ctx = createDeployContext({}, creds as any);
-    ctx.helpers.request.mockImplementation(async (opts: any) =>
-      opts.uri.endsWith('/spa-check') ? { isSPA: false } : DEPLOYMENT,
-    );
+  it('the toggle turns the question off', async () => {
+    const ctx = createDeployContext({ options: { spaDetect: false } });
 
     await node.execute.call(ctx);
 
-    const check = ctx.helpers.request.mock.calls.find((c: any[]) =>
-      c[0].uri.endsWith('/spa-check'),
-    );
-    expect(check[0].headers).toEqual({ 'Content-Type': 'application/json' });
-  });
-
-  // The platform answers an index over its bound "no", and its route refuses
-  // a body over the JSON intake cap, so the node skips the question above the
-  // bound, exactly as the SDK does.
-  it.each([
-    ['at the bound is asked about', SPA_MAX_INDEX_BYTES, 1],
-    ['one byte over is not', SPA_MAX_INDEX_BYTES + 1, 0],
-  ])('an index %s', async (_w, bytes, asked) => {
-    const ctx = spaCtx(true, {
-      input: 'text',
-      fileContent: 'x'.repeat(bytes),
-      fileName: 'index.html',
-    });
-
-    await node.execute.call(ctx);
-
-    expect(
-      ctx.helpers.request.mock.calls.filter((c: any[]) => c[0].uri.endsWith('/spa-check')),
-    ).toHaveLength(asked);
-    expect(filenames(ctx).includes('ship.json')).toBe(asked === 1);
+    expect(getFormData(ctx).spa).toBeUndefined();
   });
 });
 
@@ -903,11 +765,7 @@ describe('Deploy — error handling', () => {
    * these rows reach the upload's own failure path. A mock that rejects
    * everything fails at the question and never gets there.
    */
-  const failUpload = (ctx: any, error: unknown) =>
-    ctx.helpers.request.mockImplementation(async (opts: any) => {
-      if (opts.uri.endsWith('/spa-check')) return { isSPA: false };
-      throw error;
-    });
+  const failUpload = (ctx: any, error: unknown) => ctx.helpers.request.mockRejectedValue(error);
 
   beforeEach(() => vi.clearAllMocks());
 
@@ -1077,19 +935,18 @@ describe('Deploy — error handling', () => {
     );
   });
 
-  it('gives a rate-limited KEYLESS question no "add a key" advice: a key lifts nothing there', async () => {
-    // The question spends no write budget, so a 429 on it is the platform's
-    // traffic ceiling, which a credential does not raise.
-    const ctx = createDeployContext({}, null);
-    const httpError: any = new Error('Too Many Requests');
-    httpError.httpCode = '429';
-    ctx.helpers.request.mockRejectedValue(httpError);
+  it('relays any other upload failure as the API said it, with no advice of its own', async () => {
+    // Only a keyless 429 and a 413 have something truer to say for a
+    // workflow; every other failure is the API's sentence, unchanged.
+    const ctx = createDeployContext();
+    const httpError: any = new Error('Internal Server Error');
+    httpError.httpCode = '500';
+    failUpload(ctx, httpError);
 
     const failure = await node.execute.call(ctx).catch((e: unknown) => e);
-    expect(failure).toMatchObject({ name: 'NodeApiError', httpCode: '429' });
+    expect(failure).toMatchObject({ name: 'NodeApiError', httpCode: '500' });
+    expect((failure as { description?: string }).description).toBeFalsy();
     expect((failure as Error).message).not.toContain('Public deploy rate limit exceeded');
-    expect(ctx.helpers.request.mock.calls).toHaveLength(1);
-    expect(ctx.helpers.request.mock.calls[0][0].uri).toMatch(/\/spa-check$/);
   });
 
   it('recognises the rate limit whether the status arrives as a string or a number', async () => {

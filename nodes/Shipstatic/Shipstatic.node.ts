@@ -380,21 +380,6 @@ async function uploadDeployment(
 }
 
 /**
- * SPA detection — parity with every SDK-riding surface.
- *
- * The SDK's deploy path runs this for the CLI, both MCP transports and the
- * VS Code extension: `POST /spa-check` (public, no credential needed), and on
- * `isSPA` it appends a generated `ship.json` so client-side routes resolve.
- * This node is direct HTTP, so without a mirror a React build deployed from a
- * workflow serves 404s on every route but `/` — on the ONE surface whose users
- * are least equipped to diagnose that, and least likely to know what
- * `ship.json` is.
- *
- * Mirrors the SDK's posture: skip when the user already ships a config, skip
- * when `index.html` is absent or over the size the platform answers "no" to,
- * and fail the deploy when the question itself fails.
- */
-/**
  * The deploy request's multipart field names, the ones this node sends.
  * Restated from `DEPLOY_FIELDS` in `@shipstatic/types`, which the zero-import
  * rule forbids reading; `tests/contract.test.ts` holds each to its owner.
@@ -409,52 +394,11 @@ export const DEPLOY_FORM = {
   VIA: 'via',
   PASSWORD: 'password',
   TTL: 'ttl',
+  SPA: 'spa',
 } as const;
-
-// Restated from `DEPLOYMENT_CONFIG_FILENAME`; fenced against it. It gates both
-// the skip-when-the-user-shipped-one check and the appended filename, so drift
-// would silently break the SPA mirror's own escape hatch.
-export const SHIP_JSON = 'ship.json';
 
 /** Restated from `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`; fenced against it. */
 export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
-
-// Restated from `SPA_DEFAULT_CONFIG` in `@shipstatic/types` — the zero-import
-// rule forbids reading it, so `tests/contract.test.ts` compares the copies.
-export const SPA_CONFIG = { rewrites: [{ source: '/(.*)', destination: '/index.html' }] };
-
-/**
- * Restated from `SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES`; fenced against it.
- * An index larger than this is not asked about: the platform answers such an
- * index "no", and its route refuses a body over the JSON intake cap, so
- * asking about a very large one would fail a deploy whose upload succeeds.
- */
-export const SPA_MAX_INDEX_BYTES = 100 * 1024;
-
-/**
- * **The server decides; this node asks.** The question carries no
- * credential: the route reads none, since its answer is about the request.
- */
-async function detectSpa(ctx: IExecuteFunctions, files: { path: string; content: Buffer }[]) {
-  const index = files.find((f) => f.path === 'index.html');
-  if (!index || index.content.length > SPA_MAX_INDEX_BYTES) return false;
-  try {
-    const response = (await ctx.helpers.request({
-      method: 'POST',
-      uri: `${API}/spa-check`,
-      headers: { 'Content-Type': 'application/json' },
-      body: { files: files.map((f) => f.path), index: index.content.toString('utf-8') },
-      json: true,
-    })) as IDataObject;
-    return response.isSPA === true;
-  } catch (error) {
-    // A question that could not be asked is a deploy that could not be
-    // decided, so its failure is the deploy's, exactly as in the SDK:
-    // deploying without the answer would publish an app whose routes 404 on
-    // reload behind a success.
-    throw apiError(ctx, error);
-  }
-}
 
 // =============================================================================
 // Credential probe — used by listSearch
@@ -673,19 +617,7 @@ async function handleDeploy(
     });
   }
 
-  // 3. SPA parity — append a routing config when the build needs one and the
-  //    user did not ship their own. Runs on the stripped paths because that is
-  //    what the deployment will serve.
-  const spaDetect = options.spaDetect !== false;
-  if (spaDetect && !files.some((f) => f.path === SHIP_JSON) && (await detectSpa(ctx, files))) {
-    // Byte-identical with the SDK's generated config (no trailing newline),
-    // so one site gets one ship.json whichever surface deploys it.
-    const content = Buffer.from(JSON.stringify(SPA_CONFIG, null, 2), 'utf-8');
-    files.push({ path: SHIP_JSON, content });
-  }
-
-  // 4. Build formData, after the SPA step so a generated config rides along.
-  //    The API hashes what it receives, so no digest is sent.
+  // 3. Build formData. The API hashes what it receives, so no digest is sent.
   const formData: IDataObject = {
     [DEPLOY_FORM.FILES]: files.map((f) => ({
       value: f.content,
@@ -704,8 +636,12 @@ async function handleDeploy(
   // right for them — an empty string is absence of intent — and wrong here,
   // where `0` is a value the user typed.)
   if (options.ttl !== undefined) formData[DEPLOY_FORM.TTL] = String(options.ttl);
+  // The single-page question, asked of the platform as every client asks it:
+  // when the files are an app and ship no ship.json, the platform adds the
+  // routing config itself, so a React build deep-links instead of 404ing.
+  if (options.spaDetect !== false) formData[DEPLOY_FORM.SPA] = 'true';
 
-  // 5. Upload — with the token when one is configured, anonymously when not
+  // 4. Upload — with the token when one is configured, anonymously when not
   const idempotencyKey = (options.idempotencyKey as string | undefined)?.trim();
   const result = await uploadDeployment(ctx, formData, token, idempotencyKey);
 
@@ -1323,7 +1259,7 @@ export class Shipstatic implements INodeType {
             type: 'boolean',
             default: true,
             description:
-              'Whether to detect a single-page app (React, Vue, Svelte…) and add the routing config it needs, so deep links resolve instead of 404ing. Matches what the CLI and the AI-agent integrations already do. Turn it off, or include your own routing config among the deployed files, to take control.',
+              'Whether ShipStatic detects a single-page app (React, Vue, Svelte…) and adds the routing config it needs, so deep links resolve instead of 404ing. Matches what the CLI and the AI-agent integrations do. Turn it off, or include your own routing config among the deployed files, to take control.',
           },
           {
             displayName: 'TTL',

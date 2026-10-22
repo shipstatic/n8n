@@ -70,8 +70,7 @@ platform contracts rather than style:
 `API` against `DEFAULT_API`, `VIA` against `DeploymentVia.N8N`, the README's
 durations against `PUBLIC_DEPLOYMENT_TTL_SECONDS`, the operation catalogue
 against the node's own `options` arrays, the `my.shipstatic.com/api-key` link
-against `MY_API_KEY_URL`, `WireError` against `ErrorResponse`, `SPA_CONFIG` /
-`SHIP_JSON` against `SPA_DEFAULT_CONFIG` and its filename, the
+against `MY_API_KEY_URL`, `WireError` against `ErrorResponse`, the
 `Idempotency-Key` header against `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`, the
 password range against `PASSWORD_CONSTRAINTS`, the claim promise, the
 destructive-op hints, the credential shape, the README contract — and, the
@@ -425,11 +424,11 @@ MCP suffixes and SDK methods); `labels`/`password`/`ttl`/`idempotencyKey`/
 `token`; the files grammar (`jsonUploadSchema` verbatim); `errorType` beside
 n8n's owned `error` key; the credential type id `shipstaticApi`.
 
-**`spaDetect` is a positive match, not an oversight** — it is the SDK's own
-option name (`ship`'s `src/shared/types.ts`, and the CLI flag). **Never
-"align" it to `spa`**: `spa` is the reserved first-party server-processing
-flag the purity law forbids this node to send. The current name is
-load-bearing.
+**`spaDetect` is a positive match, not an oversight**: it is the published
+option name (`DeploymentUploadOptions.spaDetect` in `@shipstatic/types`, and
+the CLI's `--no-spa-detect`). It decides whether the node sends the `spa` wire
+field; the option and the field are two names for two layers, and both are
+the platform's own.
 
 ### Deploy — Three Input Modes
 
@@ -498,6 +497,8 @@ All three modes use n8n's `request` helper with the `formData` option — the sa
 - `password` — optional plaintext (6–128 chars); the API hashes it server-side
 - `ttl` — optional lifetime in SECONDS, stringified (a multipart body is all
   strings; the API's `collectTtlFromFormData` does the `Number()`)
+- `spa` — `'true'` unless `spaDetect` is off: the platform asks the
+  single-page question of the files and writes the routing config itself
 
 **TTL's absence rule is the one place the Labels pattern does NOT apply, and
 the difference is worth stating because it looks like an inconsistency.**
@@ -523,7 +524,7 @@ does not is relayed as a sentence naming the CLI (`npx @shipstatic/ship
 ./dist`), which sends it in several. Expiry: n8n Cloud admits a dependency, and
 the node takes the SDK.
 
-**No server-processing flags.** `/deployments` is a pure file pipe — n8n never sets `spa`, `build`, or `prerender`. Those flags are reserved for first-party UI (`web/my`, `web/www`) routing through `/upload`. See `cloudflare/api/CLAUDE.md` "Endpoint Purity". For SPA routing, users include `ship.json` in their input files; the deployment serves it as-is.
+**No build flags.** `/deployments` builds nothing, and n8n never sets `build` or `prerender`: those are reserved for first-party UI (`web/my`, `web/www`) routing through `/upload`. The single-page question is not a build, and the node asks it like every client (`spa`, above). A `ship.json` among the user's files always wins. See `cloudflare/api/CLAUDE.md`, "Endpoint Purity".
 
 ### Deploy Auth — One Slot, Optional
 
@@ -705,27 +706,16 @@ did. Same posture as the MCP's `toErrorResult`.
 This was the failure-path mirror of returning delete acknowledgements verbatim,
 and it was missed by the wave that fixed the success path.
 
-### SPA parity
+### The single-page question
 
-The SDK's deploy path runs `detectAndConfigureSPA` for the CLI, both MCP
-transports and the VS Code extension. This node is direct HTTP, so without a
-mirror a React build deployed from a workflow serves 404s on every route but
-`/` — on the ONE surface whose users are least equipped to know that
-`ship.json` is the remedy.
-
-`detectSpa()` mirrors the SDK: `POST /spa-check`, sent with no credential
-because the route reads none, and on `isSPA` append the restated `SPA_CONFIG`
-as `ship.json`, byte-identical with the SDK's own generated config. It skips
-when the user shipped their own config, when `index.html` is absent, and when
-the index is over `SPA_MAX_INDEX_BYTES`: the platform answers such an index
-"no", and its route refuses a body over the JSON intake cap, so asking about a
-very large index would fail a deploy whose upload succeeds. That number is
-restated from `SPA_CHECK_CONSTRAINTS.MAX_INDEX_BYTES` and held by
-`tests/contract.test.ts`, like every other restatement here. **A question
-that fails is the deploy failing**, as in the SDK: its error surfaces as the
-API's own (`apiError`), and nothing is uploaded.
-The append happens BEFORE formData is built, so the config rides in the same
-request as the files it configures.
+The platform answers it and the node asks it, exactly as the SDK does for the
+CLI, both MCP transports and the VS Code extension: the deploy carries
+`spa=true` unless `spaDetect` is off, and when the files are an app the API
+writes the routing config (`cloudflare/api/src/lib/platform-files.ts`). So a
+React build deployed from a workflow deep-links instead of serving 404s on
+every route but `/`, on the one surface whose users are least equipped to know
+that `ship.json` is the remedy, and it costs no request of its own. The node
+holds no copy of the config, the classifier or its size bound.
 
 ### Option completeness
 
@@ -746,10 +736,7 @@ verdict rather than a silence:
 | `GET /ping`, `GET /limits` | **Refuse** — already recorded below (diagnostics, not workflow steps) |
 | `GET /account/consent`, `PUT /account/key`, `POST /account/claim`, `DELETE /account` | **Refuse.** Account *administration*, not automation. `PUT /key` mints a credential (same reason as `/tokens`), `DELETE /account` is destructive-irreversible with no workflow use, and claiming is a human act on a one-time URL the deploy response already hands over |
 | `GET /activities` | **Refuse.** An audit feed for the dashboard. A workflow wanting deployment state reads the deployment |
-| `GET /domains-check`, `POST /setup`, `POST /upload`, `/billing/*`, `/webhooks/*`, `/unsubscribe`, `/admin/*` | **Refuse by standing law** — first-party-only surfaces. `/upload` in particular is the flagged-processing door; `/deployments` is the public pure file pipe, and that split is the platform's, not this node's |
-
-Note `POST /spa-check` is *used* but is not an operation — it is the SPA
-mirror's pre-flight, correctly invisible to the user.
+| `GET /domains-check`, `POST /setup`, `POST /upload`, `POST /spa-check`, `/billing/*`, `/webhooks/*`, `/unsubscribe`, `/admin/*` | **Refuse by standing law**: first-party-only surfaces, and `/spa-check` the pre-flight older clients ask, which the `spa` field replaces. `/upload` in particular is the build door; `/deployments` is the public contract, and that split is the platform's, not this node's |
 
 **The node's surface is exactly the hosted MCP's fifteen.** That convergence is
 worth stating because it is the check on both: two independently-maintained
@@ -767,16 +754,14 @@ Every absence is a decision, recorded — the MCP's section, translated:
   here are curated by upstream nodes, the API is the security boundary, and its
   messages relay through `NodeApiError` intact. A second validator would be a
   second owner of the rules.
-- **No `spa` / `build` / `prerender` flags.** `/deployments` is a pure file
-  pipe; those belong to first-party UI through `/upload`. (SPA *detection* is
-  different — it appends a file, it does not ask the server to process one.)
+- **No `build` / `prerender` flags.** `/deployments` builds nothing; those
+  belong to first-party UI through `/upload`. (`spa` is different: it asks a
+  question of the files, it does not ask the server to build them.)
 - **A keyless workflow in a tight loop meets the anonymous limit at the
-  upload.** The pre-flight is unmetered and reads no credential; the deploy's
-  own per-IP budget is what a credential-less loop runs into. A keyless 429
-  on the upload gets the "add an API key" advice. A 429 on the question is the
-  platform's traffic ceiling, which a key does not lift, so it surfaces as the
-  API's own error with no advice. The answer to "my deploys are rate limited"
-  is an API key, not a node change.
+  upload.** The deploy is the node's one request, and its per-IP budget is
+  what a credential-less loop runs into; a keyless 429 gets the "add an API
+  key" advice. The answer to "my deploys are rate limited" is an API key, not
+  a node change.
 - **No explicit deploy timeout.** The node passes none, so n8n's own default
   applies and the deploy is bounded by the operator's `EXECUTIONS_TIMEOUT`.
   This is deliberate: the SDK needed `DEFAULT_DEPLOY_TIMEOUT` because it drives
@@ -882,7 +867,7 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 | `extractResourceLocatorValue` | Pure helper |
 | `Deploy — authentication` | `handleDeploy` credential resolution + the anonymous door |
 | `Deploy — file collection & formData` | `handleDeploy` file pipeline (binary/text, paths, payload) |
-| `Deploy — SPA routing` | `handleDeploy` SPA detection + the `ship.json` append |
+| `Deploy — SPA routing` | `handleDeploy` the `spa` field and its toggle |
 | `Deploy — idempotency` | `handleDeploy` `Idempotency-Key` threading |
 | `Deploy — error handling` | `handleDeploy` failure paths (empty files, rejected token, rate limit, continueOnFail trace) |
 | `Deployment operations` | `execute()` routing for the Deployment resource |

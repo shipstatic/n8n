@@ -211,10 +211,10 @@ describe.skipIf(!API_URL || !TOKEN)('live — authenticated', () => {
 // ─── SPA parity, and pagination ─────────────────────────────────────────────
 
 describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
-  it('a React-shaped build gets the routing config the SDK would have added', async () => {
+  it('a React-shaped build gets the routing config from the platform', async () => {
     // The whole finding: without this, a workflow deploying a React build
-    // serves 404s on every route but `/`. Only a real `/spa-check` can say
-    // whether the detector agrees with the mirror.
+    // serves 404s on every route but `/`. Only the real API can say whether
+    // its classifier answers the `spa` field the node sends.
     const [item] = await run(
       deployParams({
         input: 'text',
@@ -225,8 +225,9 @@ describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
       }),
       TOKEN,
     );
-    // Two files reached the API: the page, and the config the node appended.
-    expect(item.json.files).toBe(2);
+    // The page, and the platform's two files: the routing config it wrote
+    // for the app, and the robots.txt it adds to a deployment that ships none.
+    expect(item.json.files).toBe(3);
     expect(item.json.config).toBe(true);
   });
 });
@@ -252,14 +253,17 @@ describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
           { path: 'index.html', content: html },
           { path: 'pixel.gif', content: gifBase64, encoding: 'base64' },
         ],
-        // The site is deliberately NOT a SPA, so the file count stays 2 and a
-        // silent `ship.json` append would show up as a failure here.
+        // The site is deliberately NOT a SPA, so a silent `ship.json` append
+        // would show up as a failure here.
         options: { spaDetect: false },
       }),
       TOKEN,
     );
 
-    expect(item.json.files).toBe(2);
+    // The two files sent, and the robots.txt the platform adds to a
+    // deployment that ships none.
+    expect(item.json.files).toBe(3);
+    expect(item.json.config).toBe(false);
 
     const base = `https://${item.json.deployment}`;
 
