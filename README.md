@@ -39,7 +39,7 @@ and a site without one is refused.
 **Text Content**: one file, typed or wired in.
 
 1. Paste or wire your HTML into **File Content**
-2. Run: it's published as `index.html`, your site's home page. You can change
+2. Run: it's published as `index.html`, the page visitors see first. You can change
    the name with **File Name**, but a site needs an `index.html` at the top,
    so keep it for a page.
 
