@@ -33,15 +33,19 @@ files come from with **Input**:
 
 Each input item becomes one file, and a shared leading directory is stripped,
 so a `dist/` build deploys as `index.html` rather than `dist/index.html`.
+The files need an `index.html` at the top: it's the page visitors see first,
+and a site without one is refused.
 
 **Text Content**: one file, typed or wired in.
 
 1. Paste or wire your HTML into **File Content**
-2. Run: it's published as `index.html` by default (change it with **File Name**)
+2. Run: it's published as `index.html`, your site's home page. You can change
+   the name with **File Name**, but a site needs an `index.html` at the top,
+   so keep it for a page.
 
 **Files (JSON)**: a whole site as data.
 
-Give it an array of files:
+Give it an array of files, with an `index.html` at the top:
 
 ```json
 [

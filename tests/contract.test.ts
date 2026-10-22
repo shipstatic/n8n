@@ -27,6 +27,7 @@ import {
   DEPLOY_FIELDS,
   DEPLOY_FILE_GRAMMAR,
   DEPLOY_TOKEN,
+  DEPLOYMENT_INDEX_FILENAME,
   DeploymentVia,
   IDEMPOTENCY_KEY_CONSTRAINTS,
   MY_API_KEY_URL,
@@ -250,6 +251,14 @@ describe('operation catalogue', () => {
     const deploy = operationOptions('deployment').find((o) => o.value === 'upload');
     expect(deploy?.description).toMatch(/claim URL/i);
     expect(deploy?.description).toMatch(/show both to the user/i);
+  });
+
+  it('names the home page the platform requires, by its owner, in the deploy op an agent reads', () => {
+    // The platform refuses a site with no index.html at its root. n8n has no
+    // server instructions, so the operation an agent reads is where it learns
+    // that before its first upload.
+    const deploy = operationOptions('deployment').find((o) => o.value === 'upload');
+    expect(deploy?.description).toContain(`${DEPLOYMENT_INDEX_FILENAME} at the top`);
   });
 
   it('states the password range the platform owns, in both places it appears', () => {

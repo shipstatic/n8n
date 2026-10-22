@@ -438,7 +438,11 @@ a third source cannot be a second boolean:
   becomes one file. Paths built from `binaryData.directory` +
   `binaryData.fileName`. **Common directory prefixes are stripped** — these
   paths carry an accident of where the files sat on a disk.
-- **Text Content**: text + file name directly. Defaults to `index.html`. The
+- **Text Content**: text + file name directly. Defaults to `index.html`, the
+  home page every site needs: the platform refuses a deployment with no
+  `index.html` at its root (the deploy rules in `@shipstatic/types`). The node
+  does not check it; the refusal is relayed, and the deploy operation's
+  description tells an agent first, fenced in `tests/contract.test.ts`. The
   File Name meets the same structural path check as the files grammar (it is
   likewise a path someone wrote); binary paths stay exempt as machine-derived
   metadata.

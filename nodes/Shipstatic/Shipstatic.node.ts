@@ -898,7 +898,7 @@ export class Shipstatic implements INodeType {
             name: 'Deploy',
             value: 'upload',
             description:
-              'Publish files and get a live URL. Without credentials, the response includes a claim URL — show both to the user. To make the site private, set Password under Options.',
+              'Publish files and get a live URL. The files need an index.html at the top, the page visitors see first. Without credentials, the response includes a claim URL — show both to the user. To make the site private, set Password under Options.',
             action: 'Deploy a site',
           },
           {
@@ -1083,7 +1083,8 @@ export class Shipstatic implements INodeType {
         displayOptions: {
           show: { resource: ['deployment'], operation: ['upload'], input: ['text'] },
         },
-        description: 'The path to deploy the content as (defaults to "index.html")',
+        description:
+          'The path to deploy the content as. A site needs an index.html at the top, so keep the default for a page.',
       },
       {
         displayName: 'Files',
@@ -1100,7 +1101,7 @@ export class Shipstatic implements INodeType {
         // States the schema, the default, and the one thing agents reliably get
         // wrong — base64-encoding text that should have been passed as text.
         description:
-          'The site to deploy, as a JSON array of files. Each entry is an object with "path" (relative, e.g. "index.html" or "assets/app.css") and "content". Content is plain text by default — encoding defaults to "utf-8", so pass HTML, CSS, JS, JSON or SVG directly as a normal string with no encoding step. Only for genuinely binary files (images, fonts) add "encoding": "base64" to that entry and pass base64-encoded bytes; never base64-encode text. Example: [{"path": "index.html", "content": "<h1>Hi</h1>"}, {"path": "style.css", "content": "body{margin:0}"}]',
+          'The site to deploy, as a JSON array of files, one of them "index.html" at the top. Each entry is an object with "path" (relative, e.g. "index.html" or "assets/app.css") and "content". Content is plain text by default — encoding defaults to "utf-8", so pass HTML, CSS, JS, JSON or SVG directly as a normal string with no encoding step. Only for genuinely binary files (images, fonts) add "encoding": "base64" to that entry and pass base64-encoded bytes; never base64-encode text. Example: [{"path": "index.html", "content": "<h1>Hi</h1>"}, {"path": "style.css", "content": "body{margin:0}"}]',
       },
 
       // Deployment — used by get, set, delete. Resource locator gives the user
