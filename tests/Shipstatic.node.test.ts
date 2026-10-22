@@ -472,12 +472,12 @@ describe('Deploy — file collection & formData', () => {
     ]);
   });
 
-  it('leaves the single-page question to the platform in files mode, like every mode', async () => {
+  it('asks the single-page question in files mode, like every mode', async () => {
     const ctx = filesCtx([{ path: 'index.html', content: '<div id="root"></div>' }]);
 
     await node.execute.call(ctx);
 
-    expect(getFormData(ctx).spa).toBeUndefined();
+    expect(getFormData(ctx).spa).toBe('true');
   });
 
   it('sends ttl in formData when the option was added', async () => {
@@ -587,7 +587,7 @@ describe('Deploy — file collection & formData', () => {
 
     await node.execute.call(ctx);
 
-    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'spaDetect', 'via']);
+    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'spa', 'via']);
   });
 
   it('single file deploy preserves path without stripping', async () => {
@@ -674,7 +674,7 @@ describe('Deploy — SPA routing', () => {
 
     await node.execute.call(ctx);
 
-    expect(getFormData(ctx).spaDetect).toBe('true');
+    expect(getFormData(ctx).spa).toBe('true');
     expect(ctx.helpers.request.mock.calls.map((c: any[]) => c[0].uri)).toEqual([
       'https://api.shipstatic.com/deployments',
     ]);
@@ -693,7 +693,7 @@ describe('Deploy — SPA routing', () => {
 
     await node.execute.call(ctx);
 
-    expect(getFormData(ctx).spaDetect).toBeUndefined();
+    expect(getFormData(ctx).spa).toBeUndefined();
   });
 });
 
