@@ -60,9 +60,9 @@ Want it private? Add a **Password** under the Deploy operation's Options (6–12
 
 ### Single-page apps just work
 
-Deploying a React, Vue or Svelte build? The node detects it and adds the routing
-config the site needs, so `/about` resolves to your app instead of returning
-404. It is on by default and does nothing to sites that are not single-page
+Deploying a React, Vue or Svelte build? ShipStatic detects it and adds the
+routing config the site needs, so `/about` resolves to your app instead of
+returning 404. It is on by default and does nothing to sites that are not single-page
 apps.
 
 Two ways to take control: turn **Single-Page App Routing** off under Options, or
