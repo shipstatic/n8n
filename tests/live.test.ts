@@ -212,7 +212,7 @@ describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
   it('a React-shaped build gets the routing config from the platform', async () => {
     // The whole finding: without this, a workflow deploying a React build
     // serves 404s on every route but `/`. Only the real API can say whether
-    // it asks a deploy that names no `spa`.
+    // it answers the node's default ask.
     const [item] = await run(
       deployParams({
         input: 'text',
@@ -223,9 +223,10 @@ describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
       }),
       TOKEN,
     );
-    // The page, and the platform's two files: the routing config it wrote
-    // for the app, and the robots.txt it adds to a deployment that ships none.
-    expect(item.json.files).toBe(3);
+    // The page, and the platform's three files: the routing config it wrote
+    // for the app, and the robots.txt and favicon.ico it adds to a deployment
+    // that ships none.
+    expect(item.json.files).toBe(4);
     expect(item.json.config).toBe(true);
   });
 });
@@ -257,9 +258,9 @@ describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
       TOKEN,
     );
 
-    // The two files sent, and the robots.txt the platform adds to a
-    // deployment that ships none.
-    expect(item.json.files).toBe(3);
+    // The two files sent, and the robots.txt and favicon.ico the platform
+    // adds to a deployment that ships none.
+    expect(item.json.files).toBe(4);
     expect(item.json.config).toBe(false);
 
     const base = `https://${item.json.deployment}`;

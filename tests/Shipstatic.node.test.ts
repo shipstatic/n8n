@@ -587,7 +587,7 @@ describe('Deploy — file collection & formData', () => {
 
     await node.execute.call(ctx);
 
-    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'via']);
+    expect(Object.keys(getFormData(ctx)).sort()).toEqual(['files[]', 'spaDetect', 'via']);
   });
 
   it('single file deploy preserves path without stripping', async () => {
@@ -665,16 +665,16 @@ describe('Deploy — SPA routing', () => {
   const filenames = (ctx: any) =>
     (getFormData(ctx)['files[]'] as any[]).map((f) => f.options.filename);
 
-  it('leaves the single-page question to the platform: one request, no field', async () => {
-    // The platform asks every deploy, so a React build deployed from a
-    // workflow deep-links instead of serving 404s on every route but `/`,
-    // on the one surface whose users are least equipped to know that
-    // `ship.json` is the remedy. The platform writes the config.
+  it('asks the single-page question by default, in the one request', async () => {
+    // So a React build deployed from a workflow deep-links instead of serving
+    // 404s on every route but `/`, on the one surface whose users are least
+    // equipped to know that `ship.json` is the remedy. The platform writes
+    // the config.
     const ctx = createDeployContext();
 
     await node.execute.call(ctx);
 
-    expect(getFormData(ctx).spa).toBeUndefined();
+    expect(getFormData(ctx).spaDetect).toBe('true');
     expect(ctx.helpers.request.mock.calls.map((c: any[]) => c[0].uri)).toEqual([
       'https://api.shipstatic.com/deployments',
     ]);
@@ -688,12 +688,12 @@ describe('Deploy — SPA routing', () => {
     expect(filenames(ctx)).not.toContain('ship.json');
   });
 
-  it('the toggle sends the opt-out', async () => {
+  it('the toggle off sends nothing: absence asks nothing', async () => {
     const ctx = createDeployContext({ options: { spaDetect: false } });
 
     await node.execute.call(ctx);
 
-    expect(getFormData(ctx).spa).toBe('false');
+    expect(getFormData(ctx).spaDetect).toBeUndefined();
   });
 });
 

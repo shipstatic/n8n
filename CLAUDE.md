@@ -426,8 +426,9 @@ n8n's owned `error` key; the credential type id `shipstaticApi`.
 
 **`spaDetect` is a positive match, not an oversight**: it is the published
 option name (`DeploymentUploadOptions.spaDetect` in `@shipstatic/types`, and
-the CLI's `--no-spa-detect`). Off, the node sends the `spa=false` opt-out; the option
-and the field are two names for two layers, and both are the platform's own.
+the CLI's `--no-spa-detect`), and since types 3.15 it is the wire field's name
+too (`DEPLOY_FIELDS.SPA_DETECT`). On, the node sends `spaDetect=true`; off, it
+sends nothing.
 
 ### Deploy — Three Input Modes
 
@@ -500,9 +501,10 @@ All three modes use n8n's `request` helper with the `formData` option — the sa
 - `password` — optional plaintext (6–128 chars); the API hashes it server-side
 - `ttl` — optional lifetime in SECONDS, stringified (a multipart body is all
   strings; the API's `collectTtlFromFormData` does the `Number()`)
-- `spa` — `'false'` when `spaDetect` is off, and absent otherwise: the
-  platform asks every deploy the single-page question and writes the routing
-  config itself, so the opt-out is the one value there is to send
+- `spaDetect` — `'true'` unless the toggle is off, and absent then: the
+  platform asks the single-page question of a deploy that asks and writes the
+  routing config itself, and absence asks nothing, so the node 2.0 that sent
+  nothing for its opt-out keeps it
 
 **TTL's absence rule is the one place the Labels pattern does NOT apply, and
 the difference is worth stating because it looks like an inconsistency.**
@@ -528,7 +530,7 @@ does not is relayed as a sentence naming the CLI (`npx @shipstatic/ship
 ./dist`), which sends it in several. Expiry: n8n Cloud admits a dependency, and
 the node takes the SDK.
 
-**No build flags.** `/deployments` builds nothing, and n8n never sets `build` or `prerender`: those are reserved for first-party UI (`web/my`, `web/www`) routing through `/upload`. The single-page question is not a build, and the node asks it like every client (`spa`, above). A `ship.json` among the user's files always wins. See `cloudflare/api/CLAUDE.md`, "Endpoint Purity".
+**No build flags.** `/deployments` builds nothing, and n8n never sets `build` or `prerender`: those are reserved for first-party UI (`web/my`, `web/www`) routing through `/upload`. The single-page question is not a build, and the node asks it like every client (`spaDetect`, above). A `ship.json` among the user's files always wins. See `cloudflare/api/CLAUDE.md`, "Endpoint Purity".
 
 ### Deploy Auth — One Slot, Optional
 
@@ -712,10 +714,10 @@ and it was missed by the wave that fixed the success path.
 
 ### The single-page question
 
-The platform asks it of every deploy, exactly as for the CLI, both MCP
-transports and the VS Code extension: the node sends `spa=false` when
-`spaDetect` is off and nothing otherwise, and when the files are an app the
-API writes the routing config (`cloudflare/api/src/lib/platform-files.ts`). So a
+The node asks it of every deploy by default, exactly as the CLI, both MCP
+transports and the VS Code extension do: it sends `spaDetect=true` unless the
+toggle is off, and when the files are an app the API writes the routing config
+(`cloudflare/api/src/lib/platform-files.ts`). So a
 React build deployed from a workflow deep-links instead of serving 404s on
 every route but `/`, on the one surface whose users are least equipped to know
 that `ship.json` is the remedy, and it costs no request of its own. The node
@@ -759,7 +761,7 @@ Every absence is a decision, recorded — the MCP's section, translated:
   messages relay through `NodeApiError` intact. A second validator would be a
   second owner of the rules.
 - **No `build` / `prerender` flags.** `/deployments` builds nothing; those
-  belong to first-party UI through `/upload`. (`spa` is different: it asks a
+  belong to first-party UI through `/upload`. (`spaDetect` is different: it asks a
   question of the files, it does not ask the server to build them.)
 - **A keyless workflow in a tight loop meets the anonymous limit at the
   upload.** The deploy is the node's one request, and its per-IP budget is
@@ -871,7 +873,7 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 | `extractResourceLocatorValue` | Pure helper |
 | `Deploy — authentication` | `handleDeploy` credential resolution + the anonymous door |
 | `Deploy — file collection & formData` | `handleDeploy` file pipeline (binary/text, paths, payload) |
-| `Deploy — SPA routing` | `handleDeploy` the `spa` field and its toggle |
+| `Deploy — SPA routing` | `handleDeploy` the `spaDetect` field and its toggle |
 | `Deploy — idempotency` | `handleDeploy` `Idempotency-Key` threading |
 | `Deploy — error handling` | `handleDeploy` failure paths (empty files, rejected token, rate limit, continueOnFail trace) |
 | `Deployment operations` | `execute()` routing for the Deployment resource |

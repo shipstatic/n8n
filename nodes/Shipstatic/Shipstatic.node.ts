@@ -394,7 +394,7 @@ export const DEPLOY_FORM = {
   VIA: 'via',
   PASSWORD: 'password',
   TTL: 'ttl',
-  SPA: 'spa',
+  SPA_DETECT: 'spaDetect',
 } as const;
 
 /** Restated from `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`; fenced against it. */
@@ -636,10 +636,11 @@ async function handleDeploy(
   // right for them — an empty string is absence of intent — and wrong here,
   // where `0` is a value the user typed.)
   if (options.ttl !== undefined) formData[DEPLOY_FORM.TTL] = String(options.ttl);
-  // The platform asks every deploy the single-page question and, when the
-  // files are an app that ships no ship.json, adds the routing config itself,
-  // so a React build deep-links instead of 404ing. Only the opt-out is sent.
-  if (options.spaDetect === false) formData[DEPLOY_FORM.SPA] = 'false';
+  // The platform asks the single-page question of a deploy that asks it to
+  // and, when the files are an app that ships no ship.json, adds the routing
+  // config itself, so a React build deep-links instead of 404ing. The node
+  // asks unless the toggle is off, and off sends nothing: absence asks nothing.
+  if (options.spaDetect !== false) formData[DEPLOY_FORM.SPA_DETECT] = 'true';
 
   // 4. Upload — with the token when one is configured, anonymously when not
   const idempotencyKey = (options.idempotencyKey as string | undefined)?.trim();
