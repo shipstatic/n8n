@@ -123,8 +123,8 @@ export const FILES_GRAMMAR = {
  */
 function checkDeployPath(path: string): string | undefined {
   if (path.length === 0) return 'is empty';
-  if (path.startsWith('/')) return 'starts with "/" — paths are relative to the site root';
-  if (path.includes('\\')) return 'contains a backslash — use "/" as the separator';
+  if (path.startsWith('/')) return 'starts with "/": paths are relative to the site root';
+  if (path.includes('\\')) return 'contains a backslash: use "/" as the separator';
   if (path.includes('\0')) return 'contains a null byte';
   for (const segment of path.split('/')) {
     if (segment === '.' || segment === '..') return 'contains a "." or ".." segment';
@@ -507,8 +507,8 @@ function readFilesInput(ctx: IExecuteFunctions): { path: string; content: Buffer
     // fourth uncovered branch the moment it was written.
     const received = parsed === null || parsed === undefined ? 'null' : typeof parsed;
     fail(
-      `Files must be a JSON array of files — received ${received}`,
-      'Expected an array like [{"path": "index.html", "content": "<h1>Hi</h1>"}] — one object per file, each with "path" and "content".',
+      `Files must be a JSON array of files, but received ${received}`,
+      'Expected an array like [{"path": "index.html", "content": "<h1>Hi</h1>"}], one object per file, each with "path" and "content".',
     );
   }
 
@@ -546,7 +546,7 @@ function readFilesInput(ctx: IExecuteFunctions): { path: string; content: Buffer
       if (!buffer) {
         fail(
           `${where} ("${path as string}") is marked base64 but is not valid base64`,
-          'Pass text content as a plain string with no encoding — only genuinely binary files (images, fonts) should be base64.',
+          'Pass text content as a plain string with no encoding. Only genuinely binary files (images, fonts) should be base64.',
         );
       }
     } else {
@@ -611,7 +611,7 @@ async function handleDeploy(
   }
 
   if (files.length === 0) {
-    throw new NodeOperationError(ctx.getNode(), 'No files to deploy — all input items were empty', {
+    throw new NodeOperationError(ctx.getNode(), 'No files to deploy: all input items were empty', {
       description:
         'Connect a node that produces binary data (e.g. Read Binary Files, HTTP Request, Convert to File), or switch Input to Text Content or Files (JSON).',
     });
