@@ -2,16 +2,18 @@
 
 Claude Code instructions for the **ShipStatic n8n Community Node**.
 
-**n8n-nodes-shipstatic** — n8n community node for the ShipStatic static hosting platform. Direct HTTP calls to the ShipStatic API — zero runtime dependencies. Published to npm. **Maturity:** v2.x — the 2.x node is the one that speaks to the **3.x platform**. Deployments + Domains (15 operations), optional credentials, n8n Cloud verified.
+**n8n-nodes-shipstatic** is the n8n community node for the ShipStatic static hosting platform: direct HTTP calls to the ShipStatic API, zero runtime dependencies, published to npm. **Maturity:** v2.x; the 2.x node speaks to the **3.x platform**. Deployments + Domains (15 operations), optional credentials, n8n Cloud verified.
 
-**2.0.0 (2026-09-20) is a major for a reason this node's own code does not show.** Not one line of `Shipstatic.node.ts` changed: the node passes the wire through, carries zero domain-status literals, and its operations, parameters and credential are untouched. What changed is the JSON a domain operation ANSWERS with. `status` used to be the DNS enum (`pending`, `partial`, `success`) with `paused` glued on; it is now the domain's standing (`live`, `unlinked`, `unverified`, `paused`), and the DNS fact moved to a `verification` field beside it, joined by `verified`, `verifications` and `paused`. A workflow with an IF node branching on `$json.status === 'success'` stops matching, silently, and a passthrough node is exactly where that is hardest to notice. The version is the only warning such a workflow gets, which is why it is a major rather than the patch the diff would suggest.
+**A passthrough node takes a major for a wire change its own code does not show.** The node passes the API's JSON through as item json, so a changed field meaning (a domain's `status` word, say) silently breaks an IF node branching on it. The version is the only warning such a workflow gets. Each major's breaks are listed here:
+
+- **2.0.0: a domain's `status` is its standing** (`live`, `unlinked`, `unverified`, `paused`), not the DNS enum (`pending`, `partial`, `success`); the DNS fact moved to `verification`, joined by `verified`, `verifications` and `paused`. The node's own code did not change.
 
 ## Architecture
 
 ```
 nodes/Shipstatic/
-├── Shipstatic.node.ts     # Node definition + execute() — all 15 operations
-├── api.ts                 # The API base URL — one fact, two readers
+├── Shipstatic.node.ts     # Node definition + execute(): all 15 operations
+├── api.ts                 # The API base URL: one fact, two readers
 ├── Shipstatic.node.json   # Codex metadata (categories, aliases)
 └── shipstatic.svg         # Node icon (simplified logo, no SVG filters)
 
@@ -29,19 +31,19 @@ tests/
 
 ```bash
 pnpm build          # TypeScript → dist/ (uses n8n-node build)
-pnpm test --run     # All tests (~250ms; the live tier skips without SHIP_API_URL)
-pnpm coverage       # The suite plus the ratchet — what CI runs
+pnpm test --run     # All tests (the live tier skips without SHIP_API_URL)
+pnpm coverage       # The suite plus the ratchet: what CI runs
 pnpm typecheck      # tsc over nodes, credentials AND tests, 0 errors
 pnpm lint           # Biome (the platform standard)
-pnpm lint:n8n       # The n8n Cloud VERIFICATION ruleset — see "Two linters"
-pnpm dev            # Dev mode with hot reload (icon won't show — see Known Gotchas)
+pnpm lint:n8n       # The n8n Cloud VERIFICATION ruleset, see "Two linters"
+pnpm dev            # Dev mode with hot reload (icon won't show, see Known Gotchas)
 ```
 
 ## Core Patterns
 
-### Direct HTTP — No SDK, No Dependencies
+### Direct HTTP: No SDK, No Dependencies
 
-Every operation is a direct HTTP call to `https://api.shipstatic.com`. Zero runtime dependencies — required for n8n Cloud verification. The n8n layer handles:
+Every operation is a direct HTTP call to `https://api.shipstatic.com`. Zero runtime dependencies, required for n8n Cloud verification. The n8n layer handles:
 
 - UI definition (resource/operation selectors, parameter fields)
 - Credential retrieval → Bearer token header
@@ -51,317 +53,211 @@ Every operation is a direct HTTP call to `https://api.shipstatic.com`. Zero runt
 
 ### The sandbox contract, and what it costs
 
-This is the ONE consumer in the constellation that cannot import the facts it
+This is the ONE consumer of the platform that cannot import the facts it
 depends on. `@n8n/eslint-plugin-community-nodes` enforces two rules that are
 platform contracts rather than style:
 
-- **`no-restricted-imports`** — any non-relative import in `nodes/` or
-  `credentials/` is refused. It matches on the import STATEMENT, so even
+- **`no-restricted-imports`**: any non-relative import in `nodes/` or
+  `credentials/` is refused. It matches the import STATEMENT, so even
   `import type`, which provably erases, is rejected. `@shipstatic/types` is
   therefore a **devDependency the suite imports and the node restates**.
-- **`no-restricted-globals`** — `process`, `globalThis`, `setTimeout`,
+- **`no-restricted-globals`**: `process`, `globalThis`, `setTimeout`,
   `__dirname` and friends. n8n Cloud sandboxes community nodes away from these,
-  so reading `process.env` at module load would be a **ReferenceError before the
-  node loads**, taking every operation down. This is why there is no
-  `SHIP_API_URL` override in the artifact, unlike every other platform consumer.
+  so reading `process.env` at module load is a **ReferenceError before the
+  node loads**. This is why the artifact has no `SHIP_API_URL` override.
 
-**Where a restatement is forced, a fence compares the copies** (root
-`CLAUDE.md`, "The Constellation Law"). `tests/contract.test.ts` holds every one:
-`API` against `DEFAULT_API`, `VIA` against `DeploymentVia.N8N`, the README's
-durations against `PUBLIC_DEPLOYMENT_TTL_SECONDS`, the operation catalogue
-against the node's own `options` arrays, the `my.shipstatic.com/api-key` link
-against `MY_API_KEY_URL`, `WireError` against `ErrorResponse`, the
-`Idempotency-Key` header against `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`, the
-password range against `PASSWORD_CONSTRAINTS`, the claim promise, the
-destructive-op hints, the credential shape, the README contract — and, the
-fence the manifest cannot be, the BUILT `dist/**/*.js` requiring nothing
-outside `n8n-workflow` and node builtins. `n8n-node build` is a `tsc`
-transpile, not a bundle, so a devDependency that reached a value position
-would install fine here and be MODULE_NOT_FOUND for every user.
+**Where a restatement is forced, a fence compares the copies.**
+`tests/contract.test.ts` holds every one: `API` against `DEFAULT_API`, `VIA`
+against `DeploymentVia.N8N`, the README's durations against
+`PUBLIC_DEPLOYMENT_TTL_SECONDS`, the operation catalogue against the node's own
+`options` arrays, the `my.shipstatic.com/api-key` link against
+`MY_API_KEY_URL`, `WireError` against `ErrorResponse`, the `Idempotency-Key`
+header against `IDEMPOTENCY_KEY_CONSTRAINTS.HEADER`, the password range against
+`PASSWORD_CONSTRAINTS`, the Files (JSON) grammar against `DEPLOY_FILE_GRAMMAR`,
+the claim promise, the destructive-op hints, the credential shape, the README
+contract, and the BUILT `dist/**/*.js` requiring nothing outside `n8n-workflow`
+and node builtins. `n8n-node build` is a `tsc` transpile, not a bundle, so a
+devDependency in a value position would install fine here and be
+MODULE_NOT_FOUND for every user.
 
-**Examined and REFUSED, recorded so nobody re-proposes them:** no codegen —
-deriving the ledger from types at build would make drift impossible instead of
-red, but for ~10 scalars and two small tables a fence that fails beats a
-generator plus a build stage plus a drift guard (revisit only if the ledger
-triples). No `@shipstatic/types/wire` subpath — the sandbox forbids this node
-importing it regardless, and no second hand-rolled client exists.
-`parseLabels` is NOT types' `deserializeLabels` — different domains (UI
-comma-split with absence semantics vs DB JSON-string with always-array
-semantics); do not "unify" them. `errorType` stays this node's word for the
-wire's `error` field — n8n's UI owns the `error` key; idiom, not drift. Two
-fences were likewise DECLINED with the rule as the reason: a `DEPLOY_FIELDS`
-row fence (loud, live-proven — a wrong field name fails every deploy on its
-first try) and a credential-placeholder prefix fence (a prefix change is a
-deliberate platform-wide break, never drift).
+**Examined and REFUSED, so none is re-proposed:**
 
-### The two floors, both MEASURED (2026-08-19)
+- **No codegen** deriving the ledger from types at build: for about ten
+  scalars and two small tables, a fence that fails beats a generator plus a
+  build stage plus a drift guard. Revisit if the ledger triples.
+- **No `@shipstatic/types/wire` subpath**: the sandbox forbids the import
+  regardless, and no second hand-rolled client exists.
+- **`parseLabels` is not `deserializeLabels`**: UI comma-split with absence
+  semantics against DB JSON-string with always-array semantics. Do not unify.
+- **`errorType` stays this node's word** for the wire's `error` field, because
+  n8n's UI owns the `error` key.
+- **Two fences declined**: a `DEPLOY_FIELDS` row fence (a wrong field name
+  fails every deploy on its first try, so drift is loud) and a
+  credential-placeholder prefix fence (a prefix change is a deliberate
+  platform-wide break, never drift).
 
-Neither number was chosen; both were probed, and the probe found the pair
-contradicting each other.
+### The two floors
 
-**`n8n-workflow >= 1.83.0` is where the node's code compiles.** The binding
-symbol is `NodeConnectionTypes` — absent at 1.82.0, present at 1.83.0
-(bisected over the published tarballs). The other three requirements
-(`usableAsTool`, listSearch `paginationToken`, `resourceLocator`) are all
-older. Typecheck AT that floor: **0 errors.** The suite cannot RUN there —
-vitest fails to resolve the package entry, because 1.83.0 predates the exports
-map it needs — which is a harness limit, not a node-code one, and is why the
-claim is scoped to "compiles" rather than "passes".
+**`n8n-workflow >= 1.83.0` is where the code compiles** (`NodeConnectionTypes`
+is absent at 1.82.0); the suite cannot RUN there (no exports map), so the claim
+is "compiles", not "passes". n8n 1.85.0 carries it: **n8n >= 1.85.0**.
 
-Mapped to what users install: n8n 1.84.0 carried n8n-workflow 1.82.0 and n8n
-1.85.0 carried 1.83.0, so the code floor is **n8n >= 1.85.0**.
+**`engines.node` is `>=20.19`**: n8n 2.0.0's own `engines.node` and the
+platform's published-package floor. A higher floor would exclude hosts the code
+floor supports.
 
-**`engines.node` was `>=22.16` and it was wrong** — not stale, incoherent. n8n
-1.85 through the 1.x line declare `>=18.17 <= 22`, so a floor of 22.16
-**excluded every host the code floor claims to support**. It is `>=20.19` now,
-and that number does two jobs at once without being a compromise: it is n8n
-2.0.0's own `engines.node`, and it is the estate's published-package floor.
-Measured, coinciding — not chosen to satisfy both.
+**Support is declared at n8n 2.x, narrower than what compiles, by decision.**
+2.x is what the suite runs against and what n8n Cloud serves; claiming the
+wider range would claim something untested. Do not "fix" the engines value
+toward the compile floor.
 
-**Support is declared at n8n 2.x, which is narrower than what compiles.** The
-distinction is deliberate: 1.85 is where the code would work, 2.x is what the
-suite runs against and what n8n Cloud serves. Claiming the wider range would be
-claiming something untested. Recorded so the next reader does not "fix" the
-engines value back toward the compile floor.
+**`peerDependencies` stays `"*"`.** It is what n8n's own scaffolding emits, and
+a narrowed range may trip the verification scanner or the installer. The floor
+lives in prose, knowingly. Reopen when a scan of a narrowed range passes.
 
-**`peerDependencies` stays `"*"` for now.** Narrowing it is the one half of
-this that is genuinely a T6 question: `"*"` is what n8n's own scaffolding
-emits, and a narrowed range may trip the community-package verification
-scanner or the installer. It resolves when that scanner actually runs (T6.4).
-Until then the floor lives in prose — knowingly, with this sentence as the
-record that it lacks a mechanism.
+### The verification ruleset is a MOVING contract: pin it, but walk the pin
 
-### The verification ruleset is a MOVING contract — pin it, but walk the pin
-
-`@n8n/node-cli` is exact-pinned (the artifact-tool law: it emits the published
-tarball). It also *carries* `@n8n/eslint-plugin-community-nodes`, which is the
-ruleset **n8n Cloud verification is judged against** — an external contract that
-changes without asking us. Pinning the tool therefore pins the contract, and a
-pin left alone stops being a fence and becomes a souvenir.
-
-**Measured 2026-08-18, and it is the sharpest instance of this the estate has.**
-The pin sat at `0.23.1` while `latest` was `0.44.2` — 21 versions — which held
-the verification plugin at `0.9.0` against a current `0.29.0`. **The ruleset had
-gone from 56 rules to 176.** `pnpm lint:n8n` was green the whole time, against a
-third of the contract it claimed to enforce. Bumping the pin turned up four
-ERRORS that would plausibly have failed a Cloud verification submission:
-
-- **`no-forbidden-lifecycle-scripts`** — `prepare` is banned outright in
-  community node packages ("these scripts execute arbitrary code during
-  installation"). The estate's git-hooks standard installs `core.hooksPath` via
-  exactly that script, so this repo cannot carry it. See below.
-- **`require-node-api-error` ×2** in `execute()` — both are RE-throws of errors
-  already typed by `apiError`, so they carry inline disables naming that reason;
-  re-wrapping would nest a typed error in itself and discard the `itemIndex`
-  just attached.
-- **`require-node-api-error`** in the suite — disabled for `tests/**` in
-  `eslint.config.mjs`: `NodeApiError` needs a live `INode` to construct, and a
-  fence reporting its own precondition is not node runtime behaviour.
-
-One warning survives deliberately: **`icon-prefer-themed-variants`** wants the
-`{ light, dark }` icon form. That is real work blocked on a dark brand SVG (a
-design asset), not a code change — recorded, not suppressed.
-
-**Treat every new error it surfaces as a verification finding, not lint noise.**
-The bump is proven safe for the artifact: the tarball's file list is identical
-across `0.23.1` → `0.44.2`.
-
-**Two MECHANISMS hold that, because the sentence version of it did not.** This
-paragraph originally read "do not auto-merge this one — read what the new rules
-say", which is a promise with nothing enforcing it: `renovate.json` extends the
-org preset, and the preset auto-merges devDep updates behind the CI gate. That
-is the No-Fourth-Category defect written into the very section arguing against
-it. Both halves are now real:
+`@n8n/node-cli` is exact-pinned (it emits the published tarball). It also
+*carries* `@n8n/eslint-plugin-community-nodes`, the ruleset **n8n Cloud
+verification is judged against**, an external contract that changes without
+asking. Pinning the tool pins the contract, so a pin left alone stops being a
+fence. **Treat every new error a bump surfaces as a verification finding, not
+lint noise**, and confirm the tarball's file list is unchanged across the bump.
+Two mechanisms hold this:
 
 - **`renovate.json` carries a `packageRules` entry** setting
-  `automerge: false` for `@n8n/node-cli`, with both reasons stated in the rule
-  itself — it emits the published tarball, and it carries an external contract.
-  A bump now waits for a human.
-- **`pnpm lint:n8n` runs `--max-warnings 0`**, which is the half that actually
-  closes the hole. Auto-merge or not, a new ERROR always went red and blocked;
-  a new WARNING passed silently — and `icon-prefer-themed-variants` is the
-  proof it can matter, since it is a real finding the old gate would have
-  waved through. Every rule the ruleset gains is now blocking, whatever
-  severity n8n ships it at.
+  `automerge: false` for `@n8n/node-cli`, with both reasons in the rule: it
+  emits the published tarball, and it carries an external contract. A bump
+  waits for a human.
+- **`pnpm lint:n8n` runs `--max-warnings 0`**, so every rule the ruleset gains
+  is blocking, whatever severity n8n ships it at.
 
-The single live warning is suppressed **inline at the icon**, with its reason
-and its expiry, rather than switched off in `eslint.config.mjs` — an
-exception you can see from the code it concerns, which disappears when T3
-lands the asset. That placement is the point: a config-level `off` would have
-hidden the very finding that justified making warnings blocking.
+**The tree carries exactly one suppression**: the themed-icon warning, inline
+at the `icon` line with its reason and expiry ("The Themed-Icon Warning Is
+Refused On The Merits", below). Inline rather than an `off` in
+`eslint.config.mjs`, so the decision is visible where the icon is. The suite
+switches `require-node-api-error` off for `tests/**` in `eslint.config.mjs`:
+`NodeApiError` needs a live `INode`, and a fence reporting its own precondition
+is not node runtime behaviour.
 
 ### `npm pkg set` deletes this package's most load-bearing field
 
-`dependencies: {}` is not decoration here: the zero-runtime-dependency
-contract is what n8n Cloud verification is judged on, and the manifest
-DECLARING it empty is half of how that contract is read (the other half is
-`tests/contract.test.ts`'s artifact fence over the built bytes). **Any
-`npm pkg set` on this manifest silently drops the empty object** — npm treats
-an empty collection as nothing to write, so a version bump or a description
-edit takes the declaration with it.
+`dependencies: {}` is half of how the zero-runtime-dependency contract is read
+(the other half is `tests/contract.test.ts`'s artifact fence over the built
+bytes). **Any `npm pkg set` on this manifest silently drops the empty
+object**, because npm treats an empty collection as nothing to write. Edit this
+manifest with a JSON reader that preserves it, or re-add the field and let the
+suite confirm before you commit.
 
-It has bitten twice (2026-09-01, the via wave and again the coherence wave),
-and both times the contract test caught it, which is the fence working. The
-rule is therefore not "remember": edit this manifest with a JSON reader that
-preserves it, or re-add the field and let the suite confirm before you commit.
+### No `prepare` script
 
-### No `prepare` script — the one place the estate's hook standard cannot reach
-
-Root `CLAUDE.md`'s tooling standard installs the pre-commit hook with
+The platform's other repos install the pre-commit hook with
 `"prepare": "git config core.hooksPath scripts/githooks"`. **This repo may not
 have it**: `prepare` is on the community-node ruleset's forbidden-lifecycle list
 (with `preinstall`, `install`, `postinstall`, `prepublish`, `preprepare`,
-`postprepare`), and that ruleset is the verification contract.
-
-`prepack` is NOT on that list, so the tarball law is unaffected.
-
-Enable the hook per clone, the same one-liner the super-repo root and
-`integrations/action` already use for their own reasons:
+`postprepare`), and that ruleset is the verification contract. `prepack` is NOT
+on that list, so it builds the tarball. Enable the hook per clone:
 
 ```bash
 git config core.hooksPath scripts/githooks
 ```
 
-An existing clone keeps working — `core.hooksPath` lives in `.git/config` and
-removing the script does not unset it.
-
 ### Two linters, and only one of them is a linter
 
-`pnpm lint` is Biome — the platform's one lint + format tool. `pnpm lint:n8n` is
-eslint carrying the community-nodes plugin above. Both run in CI. Formatting is
-Biome's alone.
+`pnpm lint` is Biome, the platform's one lint and format tool. `pnpm lint:n8n`
+is eslint carrying the community-nodes plugin above. Both run in CI. Formatting
+is Biome's alone.
 
 **`pnpm lint:n8n` APPROXIMATES the verification contract; it is not that
-contract.** This file used to claim it was, and the claim cost a failed scan.
-`@n8n/scan-community-package` is what n8n actually runs, and it differs in three
-ways that all matter (read from `scanner/scanner.mjs`, 0.32.0, 2026-08-19):
+contract.** `@n8n/scan-community-package` is what n8n runs, and it differs in
+three ways:
 
 - **`allowInlineConfig: false`.** Every `eslint-disable` in this repo is
-  OVERRULED during the check that decides Cloud listing. Proven, not inferred:
-  `1.0.0-beta.1` failed the scan on a line whose disable comment was present in
-  the scanned commit. **Consequence: a rule you disagree with must be resolved
-  in the CODE, not annotated away.**
+  OVERRULED during the check that decides Cloud listing. **A rule you disagree
+  with must be resolved in the CODE, not annotated away.**
 - **It fails on `errorCount > 0` only.** Warnings appear in the report and do
-  not fail it — which is what makes the themed-icon refusal survivable, and is
-  why that refusal is a decision rather than a gamble.
+  not fail it, which is what makes the themed-icon refusal survivable.
 - **It lints twice**: the source it fetches from GitHub *by provenance
-  attestation*, and the published tarball. The provenance is not decoration —
-  it is how the scanner finds the source to check. That is a second, unadvertised
-  reason the OIDC posture earns its keep.
+  attestation*, and the published tarball. The provenance is how the scanner
+  finds the source, a second reason the trusted-publishing posture matters.
 
-So the local gate stays useful (it is faster, and `--max-warnings 0` makes it
-stricter in the one direction that costs nothing), but **the scan is the
-authority, it needs a PUBLISHED version, and it therefore runs at T6 rather
-than in CI.** Re-run it on every release candidate:
+**The scan is the authority and needs a PUBLISHED version**, so it runs
+outside CI. Run it on every release candidate:
 
 ```bash
 npx @n8n/scan-community-package n8n-nodes-shipstatic@<version>
 ```
 
-### Release — the npm publish law, untranslated
+### Release
 
-**A branch push publishes. There is no tag ritual.** `development` → the `beta`
-dist-tag, `main` → `latest`, exactly like `@shipstatic/ship`: the version picks
-the channel (a `-` suffix → `beta`), the branch grants the right to use it, and
-`npm-latest`'s `main`-only deployment branch policy is what refuses a stable
-publish off an integration branch — GitHub declines the job before a step runs.
-`.github/workflows/ci.yml` is the flagship's file byte-for-byte in the
-`version` / `publish` / `release` / `notify` jobs; only `test` is this repo's.
+**Bump `version` in `package.json` and push. There is no tag ritual.** A
+prerelease (`-` suffix) publishes to `beta` (from either branch, normally `development`), a stable one to
+`latest` from `main`; the `npm-latest` environment admits `main` only, so
+GitHub declines a stable publish off `development` before a step runs.
+`.github/workflows/ci.yml` runs `test` → `version` → `publish` → `release` →
+`notify`, the same file as `@shipstatic/ship`'s outside the `test` job.
 
-**This repo was tag-driven until 2026-08-19, and the reason it no longer is
-belongs here, because it is the kind of thing that gets re-proposed.** Releases
-fired on `v*` from a second file (`npm-publish.yml`), which meant the law had to
-be re-expressed clause by clause wherever the trigger broke it: a
-`tag == "v" + package.json.version` assertion standing in for the branch, a
-hand-rolled `merge-base` ancestry check standing in for the environment policy,
-and a bespoke arm on `scripts/check-publish-law.sh` standing in for membership
-of the fence. **None of it was ever owed.** `integrations/vscode` is tag-driven
-because the Marketplace forbids semver prereleases; `integrations/action` is
-tag-driven because the release IS the tag and there is no registry. This package
-publishes to npm with dist-tags — nothing about its destination refuses the
-native form, so the translation was cost with no matching property. It was
-inherited from the neighbouring directories, not derived.
-
-Converged at the only free moment: **zero tags had ever been pushed, zero
-environments existed, and the pipeline had never once fired.** There was no
-ritual to break and no consumer expectation to honour. The general rule, now in
-root `CLAUDE.md`: a translation is a debt — before writing one, check whether
-the repo actually owes it.
-
-Consequences worth knowing: the trusted-publisher registration names **`ci.yml`**
-(the filename is half the registration); `--access` / `--provenance` live in this
-package's own `publishConfig`, never on the command; and `prepack` builds, so a
-tarball cannot carry a stale `dist` however it is produced.
+- **The trusted-publisher registration names `ci.yml`**: renaming the file
+  breaks publishing silently.
+- **`--access` / `--provenance` live in `publishConfig`**, never on the command.
+- **`prepack` builds**, so a tarball cannot carry a stale `dist` however it is
+  produced.
+- **A tag-driven release is refused.** A translated release model is owed only
+  where the registry refuses the native one (the Marketplace forbids semver
+  prereleases; an action has no registry). npm takes dist-tags, so nothing here
+  owes one.
 
 ### The environment dimension lives in the harness
 
 Every other platform surface derives its API URL from an environment variable.
-This one cannot (see the sandbox contract), so `nodes/Shipstatic/api.ts` is a
-plain production constant — the single owner of the fact, read by both the node
-and the credential's connection test. `tests/live.test.ts` substitutes that one
+This one cannot (the sandbox contract), so `nodes/Shipstatic/api.ts` is a plain
+production constant, the single owner of the fact, read by both the node and
+the credential's connection test. `tests/live.test.ts` substitutes that one
 module to drive the same `execute()` against a non-production API:
 
 ```bash
 SHIP_API_URL=https://api.<env> SHIP_TOKEN=ship-your-api-key pnpm test --run live
 ```
 
-It skips unless `SHIP_API_URL` is set, so it never runs in CI. `SHIP_DEPLOY_TOKEN`
-unlocks the deploy-token scope block.
+It skips unless `SHIP_API_URL` is set, so it never runs in CI.
 
-### HTTP Layer — Two Helpers, Each With One Job
+### HTTP Layer: Two Helpers, Each With One Job
 
 ```
 apiRequest(ctx, method, path, body?)         JSON + n8n credential-aware auth (every CRUD op)
 uploadDeployment(ctx, formData, token?)      POST /deployments multipart, auth attached by hand
 ```
 
-Both wrap transport errors in `NodeApiError` at the I/O boundary so the rest of the node stays trivial — the dominant idiom in n8n core nodes.
+Both wrap transport errors in `NodeApiError` at the I/O boundary, the dominant idiom in n8n core nodes.
 
-**Why two?** Each uses the n8n helper that fits its job:
-- **`apiRequest`** → `helpers.httpRequestWithAuthentication`. Most ops need n8n's credential system to inject the Bearer header.
-- **`uploadDeployment`** → `helpers.request`. n8n's modern `httpRequest` does not reliably handle multipart `FormData` (proven across v0.5–0.6 of this node); the legacy `request` helper is the only path that produces a working multipart upload — same fallback Slack, S3, and Google Drive use for file uploads. Auth is manual because deploy is the ONE operation with optional credentials, and the credential-aware helper cannot express "send this header only if a credential exists".
+- **`apiRequest`** → `helpers.httpRequestWithAuthentication`, so n8n's credential system injects the Bearer header.
+- **`uploadDeployment`** → `helpers.request`. The modern `httpRequest` did not handle multipart `FormData` when measured; the legacy `request` helper produces a working multipart upload, the same fallback n8n's own Slack, S3 and Google Drive nodes use. Auth is manual because deploy is the ONE operation with optional credentials, and the credential-aware helper cannot express "send this header only if a credential exists".
 
-**This is a WATCHED refusal, not a permanent one.** The paragraph above used to
-read as settled, and two facts stop it from being:
-
-- **`helpers.request` is formally deprecated.** Measured, not reported:
-  `n8n-workflow@2.12.0`, `dist/esm/interfaces.d.ts:559–562` —
-  `@deprecated Use .httpRequest instead`. (Its sibling
-  `requestWithAuthentication` carries the same tag.) It works today: the T7
-  sitting deployed through it on n8n 2.35.4 and the base64 bytes round-tripped
-  intact.
-- **The shield is real too.** Slack, S3 and Google Drive ride this same helper
-  for their uploads, so n8n cannot remove it without breaking its own core
-  nodes first. Realistic exposure is low — which is the reason to watch rather
-  than to migrate now.
-
-**And the part that actually matters: our own measurement is two platform
-generations old.** "`httpRequest` can't do multipart" was established on
-v0.5–0.6 of this node and has never been re-run against 2.x. A refusal resting
-on a stale measurement is the shape this estate keeps paying for, so it gets a
-named condition instead of a standing "do not modernize":
+**This is a WATCHED refusal, not a permanent one.** `helpers.request` is
+formally deprecated (`@deprecated Use .httpRequest instead` in
+`n8n-workflow`'s `interfaces.d.ts`, as is `requestWithAuthentication`). It
+works on current n8n 2.x, and n8n's own core nodes ride it, so removal would
+break them first. The measurement behind "`httpRequest` can't do multipart" is
+from 0.x of this node, so the refusal carries a named condition:
 
 > **Re-measure `httpRequest` multipart against current n8n at the next
-> maintenance window — and MANDATORILY before adopting any n8n 3.x, or on any
+> maintenance window, and MANDATORILY before adopting any n8n 3.x, or on any
 > changelog signal that the legacy helpers are being removed. If the modern
 > helper handles multipart, migrate at leisure.**
 
-Until that measurement says otherwise the refusal stands, and
-`uploadDeployment` keeps `helpers.request`. What changed is that it now has an
-expiry someone can act on rather than an instruction to stop thinking.
-
-**There was a third.** `fetchAgentToken` minted a short-lived token through `POST /tokens/agent` before every keyless deploy. The 2.x API deleted that endpoint, and the fix was a deletion rather than a port: anonymity is granted **in band** now — a credential-less `POST /deployments` receives the public-account agent identity per request, and the response carries the claim URL and expiry. The node's suite proves the deletion took by asserting a keyless deploy is exactly ONE request.
+Anonymity is granted **in band**: a credential-less `POST /deployments`
+receives the public-account identity per request, and the response carries the
+claim URL and expiry. The suite asserts a keyless deploy is exactly ONE request.
 
 ### Operations (15 total)
 
-Operation names mirror the CLI/SDK/MCP resource verbs: get, list, set, delete, records, dns, share, validate, verify. **`delete`, never `remove`** — the 2026-07 rename swept the SDK (`delete()`), the CLI (`ship … delete`) and the MCP (`*_delete`); n8n was the last surface off it, and `tests/contract.test.ts` holds it there. The deploy verb diverges intentionally — n8n surfaces "Deploy" as the user-facing action (matching the `ship <path>` shortcut UX), while the CLI/SDK method and MCP tool are named `upload`. Same operation, different label.
+Operation names mirror the CLI/SDK/MCP resource verbs: get, list, set, delete, records, dns, share, validate, verify. **`delete`, never `remove`**, held by `tests/contract.test.ts`. The deploy operation's value is `upload` (the SDK method and MCP tool name) and its label is "Deploy" (the platform's human word for the act).
 
-The node ships `version: 1` as a scalar, and the non-use of n8n's node-version
-machinery is a decision, not an omission: `version: [1, 2]` arrays are for
-platforms with users to migrate, and 1.0 was a clean break for a handful of
-users (the credential field renames, `remove` → `delete`, the anonymous-deploy
-mechanism change) under the pre-launch clean-break law. Record the non-use,
-don't build it.
+The node ships `version: 1` as a scalar. n8n's node-version machinery
+(`version: [1, 2]`) is for migrating stored workflows across a change in the
+node's own parameters; it is not used, by decision. Adopt it the first time a
+change to the node's own parameters would break a stored workflow, since the
+node now has users to migrate.
 
 | #   | Resource   | Operation | HTTP Call                                              |
 | --- | ---------- | --------- | ------------------------------------------------------ |
@@ -383,318 +279,237 @@ don't build it.
 
 ### Naming: the decision rule, stated once
 
-**The platform's idioms come first; the host is accommodated after.** Three
-clauses, and every naming question here is a lookup against them rather than a
-fresh debate:
+**The platform's idioms come first; the host is accommodated after.** Every
+naming question here is a lookup against three clauses:
 
 1. **Operation VALUES follow the platform's resource verbs, always.** They are
    the stored contract in a saved workflow *and* the tool grammar an agent
-   reads (`usableAsTool` surfaces values, not labels), so they are the half
-   that must not diverge.
+   reads (`usableAsTool` surfaces values, not labels).
 2. **DISPLAY labels go to whichever word wins on host enforcement or audience
    clarity.** "Deploy" because it is the platform's own title for the act
    (`UPLOAD_TOOL_TITLE` is "Deploy Static Site"); "List" because it is the
-   platform's verb and the community ruleset carries no get-many rule
-   (measured at plugin 0.29.0 — adopt "Get Many" as display-only if n8n ever
-   enforces it).
-3. **Host-owned mechanism words stay the host's** — `returnAll`, `limit`,
+   platform's verb and the community ruleset carries no get-many rule (adopt
+   "Get Many" as display-only if n8n ever enforces it). "Whoami" follows its
+   verb, since no platform title pulls the other way.
+3. **Host-owned mechanism words stay the host's**: `returnAll`, `limit`,
    `input`, `binaryPropertyName`. Where n8n enforces a word (its lint pins
    `returnAll`'s description sentence verbatim), the host has already won.
 
-**Converged 2026-08-19 under this rule**, while it was still free — 1.x existed
-only on `beta`, and 0.x workflows must re-pick operations anyway:
+**A rename of an operation value is a `typeVersion`-grade break.**
 
-- `deployment.deploy` → **`deployment.upload`**, label "Deploy" unchanged.
-  `upload` is the verb on every surface that speaks resource grammar
-  (`ship.deployments.upload()`, `ship deployments upload`,
-  `deployments_upload`); "Deploy" is the platform's human word for the same
-  act. Each word now holds its own role, and the agent grammar matches the MCP
-  suffix exactly.
-- `account.get` → **`account.whoami`**, label "Whoami" too. `ship whoami`,
-  `ship.whoami()`, the `whoami` MCP tool — and unlike Deploy there is no
-  platform TITLE pulling the other way, so the display follows the verb.
-
-**After 1.0.0 this same change would be a `typeVersion`-grade break.** That is
-the whole reason it happened now.
-
-**Audited and KEPT — recorded so the sweep is not re-run from scratch:**
-resource values (`deployment`/`domain`/`account` — the constitution's entity
-names); all nine domain verbs and the deployment CRUD verbs (byte-identical to
-MCP suffixes and SDK methods); `labels`/`password`/`ttl`/`idempotencyKey`/
-`token`; the files grammar (`jsonUploadSchema` verbatim); `errorType` beside
-n8n's owned `error` key; the credential type id `shipstaticApi`.
+**Audited and KEPT** (do not re-run the sweep): resource values (`deployment`/`domain`/`account`, the
+constitution's entity names); all nine domain verbs and the deployment CRUD
+verbs (byte-identical to MCP suffixes and SDK methods);
+`labels`/`password`/`ttl`/`idempotencyKey`/`token`; the files grammar;
+`errorType` beside n8n's owned `error` key; the credential type id
+`shipstaticApi`.
 
 **`spaDetect` is a positive match, not an oversight**: it is the published
 option name (`DeploymentUploadOptions.spaDetect` in `@shipstatic/types`, and
 the CLI's `--no-spa-detect`). On, the node sends `spa=true`; off, it sends
 nothing. The option and the field (`DEPLOY_FIELDS.SPA`) are two names for two
-layers, and both are the platform's own.
+layers, both the platform's own, and neither is renamed.
 
-### Deploy — Three Input Modes
+### Deploy: Three Input Modes
 
-Deploy has an **Input** selector. It replaced 0.x's `binaryData` boolean, because
-a third source cannot be a second boolean:
+Deploy has an **Input** selector:
 
 - **Binary Files** (default): reads files from binary data. Each input item
   becomes one file. Paths built from `binaryData.directory` +
-  `binaryData.fileName`. **Common directory prefixes are stripped** — these
+  `binaryData.fileName`. **Common directory prefixes are stripped**: these
   paths carry an accident of where the files sat on a disk.
 - **Text Content**: text + file name directly. Defaults to `index.html`, the
   home page every site needs: the platform refuses a deployment with no
   `index.html` at its root (the deploy rules in `@shipstatic/types`). The node
   does not check it; the refusal is relayed, and the deploy operation's
   description tells an agent first, fenced in `tests/contract.test.ts`. The
-  File Name meets the same structural path check as the files grammar (it is
-  likewise a path someone wrote); binary paths stay exempt as machine-derived
-  metadata.
+  File Name meets the same structural path check as the files grammar;
+  binary paths stay exempt as machine-derived metadata.
 - **Files (JSON)**: an array of `{ path, content, encoding? }`. The
-  agent-native path, and the reason the selector exists.
+  agent-native path, and the reason the selector exists: an AI Agent calling
+  this node as a tool has **no channel for binary at all** ("How an AI Agent
+  reaches this node", below).
 
-**Why the third mode exists — MEASURED, not assumed** (2026-08-19,
-n8n-workflow 2.12.0; the full measurement is under "How an AI Agent actually
-reaches this node"): `$fromAI` carries `string`, `number`, `boolean`, `json`
-and nothing else, and binary reaches a node through input ITEMS rather than
-parameters. So an AI Agent calling this node as a tool has **no channel for
-binary at all** — a multi-file site was un-deployable from a tool call.
-
-Two consequences that shaped the field rather than decorating it:
+Two consequences shape the field:
 
 - **The resolved value is the main road.** n8n's `json` arm type-checks the
   VALUE, so an agent's array arrives already parsed. `JSON.parse` is the
-  fallback for a hand-typed field, not the primary path.
-- **The refusal names the array.** That same host-side validator admits "a
-  non-empty object OR a non-empty array", so an agent can send `{...}` having
-  passed every upstream check. `null` is named as `null` too, since
-  `typeof null === 'object'` would tell someone who sent nothing that they
-  sent an object.
+  fallback for a hand-typed field.
+- **The refusal names the array.** The host-side validator admits "a non-empty
+  object OR a non-empty array", so an agent can send `{...}`. `null` is named
+  as `null`, since `typeof null === 'object'`.
 
-**The grammar's three divergences from the hosted MCP are DECIDED, not
-inherited.** One shape shared by two agent-facing surfaces is a contract only
-if both refuse the same inputs:
+**The grammar's three divergences from the hosted MCP are DECIDED.** One shape
+shared by two agent-facing surfaces is a contract only if both refuse the same
+inputs:
 
 | Behaviour | Decision |
 |---|---|
-| Path checks (empty, leading `/`, `\`, `.`/`..`, null byte) | **Mirrored** from the MCP's `validatePath`, same reason: fail before a wasted upload |
-| base64 | **Structurally validated.** `Buffer.from(x,'base64')` NEVER throws — it silently discards anything outside the alphabet, so the payload the MCP refuses would deploy here as garbage bytes. Wrapped base64 is accepted; whitespace is transport, not garbage |
-| Common-prefix stripping | **None in files mode.** These paths were WRITTEN; the MCP's grammar promises "the site root is implied by these paths". Stripping stays binary-only, and a test pins it |
+| Path checks (empty, leading `/`, `\`, `.`/`..`, null byte) | **Mirrored** from the MCP's `validatePath`: fail before a wasted upload |
+| base64 | **Structurally validated.** `Buffer.from(x,'base64')` NEVER throws; it silently discards anything outside the alphabet, so a payload the MCP refuses would deploy here as garbage bytes. Wrapped base64 is accepted; whitespace is transport, not garbage |
+| Common-prefix stripping | **None in files mode.** These paths were WRITTEN, and the grammar promises "the site root is implied by these paths". Stripping stays binary-only, and a test pins it |
 
-That line — structural validation of the node's OWN input format is the node's
-job, PLATFORM POLICY (extensions, sizes, junk files) is the API's and relays
-verbatim — is what permits the first two without contradicting "no client-side
-prevalidation" below.
+Structural validation of the node's OWN input format is the node's job;
+PLATFORM POLICY (extensions, sizes, junk files) is the API's and relays
+verbatim. That line permits the first two without contradicting "no
+client-side prevalidation" below.
 
-**Grammar ownership.** `{ path, content, encoding? }` with a `utf-8` default has
-THREE holders: the API's `jsonUploadSchema` (the wire original), the hosted
-MCP's `FileSpec`, and this node. The owner is `@shipstatic/types`, beside
-`DEPLOY_FIELDS` whose multipart half already lives there. **The promotion rides
-the next types convoy** — a constitution change moves as a full constellation
-walk, and coupling a broken public listing's fix to one inverts the priorities.
-Until then `tests/contract.test.ts` pins the grammar LOCALLY and says so: a
-self-consistency pin that cannot catch the API renaming a field. Expiry: the
-export exists → the pin becomes an owner-compare.
+**Grammar ownership.** `{ path, content, encoding? }` with a `utf-8` default
+is owned by `@shipstatic/types` (`DEPLOY_FILE_GRAMMAR`). The node keeps its own
+literal table (the sandbox forbids the import), and `tests/contract.test.ts`
+holds the copy to the owner and the field's description to the grammar.
 
-All three modes use n8n's `request` helper with the `formData` option — the same proven pattern used by Slack, S3, and Google Drive for multipart file uploads. Its field names are `DEPLOY_FORM`, held by `tests/contract.test.ts` to `DEPLOY_FIELDS` in `@shipstatic/types`. The formData includes:
+All three modes use n8n's `request` helper with the `formData` option. Its field names are `DEPLOY_FORM`, held by `tests/contract.test.ts` to `DEPLOY_FIELDS` in `@shipstatic/types`. The formData includes:
 
-- `files[]` — one File entry per item (or one from text content)
-- `via` — always `"n8n"` (the `VIA` constant; fenced against `DeploymentVia.N8N`)
-- `labels` — optional JSON array
-- `password` — optional plaintext (6–128 chars); the API hashes it server-side
-- `ttl` — optional lifetime in SECONDS, stringified (a multipart body is all
-  strings; the API's `collectTtlFromFormData` does the `Number()`)
-- `spa` — `'true'` unless the toggle is off, and absent then: the
-  platform asks the single-page question of a deploy that asks and writes the
-  routing config itself, and absence asks nothing, so the node 2.0 that sent
-  nothing for its opt-out keeps it
+- `files[]`: one File entry per item (or one from text content)
+- `via`: always `"n8n"` (the `VIA` constant, fenced against `DeploymentVia.N8N`)
+- `labels`: optional JSON array
+- `password`: optional plaintext (6 to 128 chars); the API hashes it server-side
+- `ttl`: optional lifetime in SECONDS, stringified (a multipart body is all
+  strings; the API does the `Number()`)
+- `spa`: `'true'` unless the toggle is off, and absent then. The platform
+  asks the single-page question of a deploy that asks and writes the routing
+  config itself; absence asks nothing
 
-**TTL's absence rule is the one place the Labels pattern does NOT apply, and
-the difference is worth stating because it looks like an inconsistency.**
-`labels` and `password` are gated on TRUTHINESS — an empty string there is
-absence of intent, a user who added the option and typed nothing. `ttl` is
-gated on KEY PRESENCE, so a `0` fed by an expression is forwarded and the
-server refuses it with its own sentence. A number has no empty string: `0` is
-a value someone typed, and swallowing it would make this node a second
-validator of a range `TTL_CONSTRAINTS` owns — and would show the user a
-deployment that never expires after they asked for one that expires
-immediately. The field's `default: 3600` exists for the same reason: adding a
-collection option puts its key in at the default, so a number field's default
-is what an unedited "Add Option" click sends.
+**TTL's absence rule is the one place the Labels pattern does NOT apply.**
+`labels` and `password` are gated on TRUTHINESS: an empty string is absence of
+intent. `ttl` is gated on KEY PRESENCE, so a `0` fed by an expression is
+forwarded and the server refuses it with its own sentence. Swallowing it would
+make this node a second validator of a range `TTL_CONSTRAINTS` owns, and would
+show a deployment that never expires to someone who asked for one that expires
+immediately. The field's `default: 3600` is what an unedited "Add Option" click
+sends.
 
 **A deploy is one request, by decision.** The node sends no manifest and no
-digest: a request that carries every file needs neither, and the API hashes
-what it receives. Sending a site in several requests (a declaration, then
-fills) is the SDK's protocol, and the node does not restate it, because n8n
-Cloud's zero-dependency rule would make it a second copy of the SDK's planner,
-upload loop and replay rule, held to the original by nothing but fences. So
-the node ships a site that fits one request, and the API's 413 for one that
-does not is relayed as a sentence naming the CLI (`npx @shipstatic/ship
-./dist`), which sends it in several. Expiry: n8n Cloud admits a dependency, and
-the node takes the SDK.
+digest; the API hashes what it receives. Sending a site in several requests is
+the SDK's protocol, and restating it here would be a second copy of the SDK's
+planner, upload loop and replay rule held by nothing but fences. The API's 413
+for a site too large for one request is relayed as a sentence naming the CLI
+(`npx @shipstatic/ship ./dist`). Expiry: n8n Cloud admits a dependency, and the
+node takes the SDK.
 
-**No build flags.** `/deployments` builds nothing, and n8n never sets `build` or `prerender`: those are reserved for first-party UI (`web/my`, `web/www`) routing through `/upload`. The single-page question is not a build, and the node asks it like every client (`spa`, above). A `ship.json` among the user's files always wins. See `cloudflare/api/CLAUDE.md`, "Endpoint Purity".
+**No build flags.** `/deployments` builds nothing, and the node never sets
+`build` or `prerender`: those are reserved for the platform's first-party UI.
+The single-page question is not a build, and the node asks it like every client
+(`spa`, above). A `ship.json` among the user's files always wins.
 
-### Deploy Auth — One Slot, Optional
+### Deploy Auth: One Slot, Optional
 
 The credential has **one field, `token`**, and it takes either platform
 population: a `ship-` API key or a `deploy-` deploy token. The node never
-inspects the prefix — the server classifies, with the same `classifyToken` the
-SDK uses, so client and server cannot disagree on dispatch. The credential TYPE
-id stays `shipstaticApi`: it names the platform, and renaming it would orphan
-every stored credential.
+inspects the prefix; the server classifies, with the same `classifyToken` the
+SDK uses. The credential TYPE id stays `shipstaticApi`: it names the platform,
+and renaming it would orphan every stored credential.
 
-### The capability stays; the promotion goes (operator decision, 2026-08-19)
+### The capability stays; the promotion goes
 
-**Deploy tokens are no longer ADVERTISED anywhere in this node.** Nothing about
-the capability changed — the slot accepts either population, the server
-classifies, no code path blocks one, and `tests/live.test.ts` still deploys
-with a `deploy-` token every run. What changed is what the node says first.
+**Deploy tokens are accepted but not ADVERTISED anywhere in this node.** The
+slot accepts either population, the server classifies, no code path blocks one,
+and `tests/live.test.ts` deploys with a `deploy-` token every run.
 
 **Every PROACTIVE surface names the API key alone**: the placeholder, the
 credential description, the upgrade guard's message, the auth-gate hint for
 credential-less account operations, and the README. These fire *before* a user
-has a credential, so they are the node choosing which population to recommend
-— and recommending one is simpler than teaching a taxonomy to someone who just
-wants the node to work.
+has a credential, and recommending one population is simpler than teaching a
+taxonomy.
 
-**Exactly one REACTIVE mention survives, and the asymmetry is the whole
-point**: the credential test's 401 rule message. It fires only for someone who
-already holds a deploy token and has just been refused, the API's 401 for a
-deploy token is deliberately byte-identical to one for a garbage credential
-(scope is not leaked), and that message is therefore the ONLY place such a user
-can learn the failure is by design rather than a broken key. Removing it would
-strip the one surface that can tell them.
+**Exactly one REACTIVE mention survives**: the credential test's 401 rule
+message. It fires only for someone holding a deploy token who has just been
+refused, and since the API does not tell that refusal apart from a bad
+credential, it is the only place such a user learns the failure is by design.
 
-Mirrors the hosted MCP's recorded precedent: any platform bearer works there
-too, and no public surface says so.
+The hosted MCP follows the same rule.
 
-**Fenced by inversion, not by deletion.** `tests/contract.test.ts` used to pin
-the two-population copy; it now pins the opposite — placeholder, description,
-the BUILT node artifact and the README must all NOT contain
-`DEPLOY_TOKEN.PREFIX`. (The built artifact rather than the source, because the
-comments explaining this decision legitimately name the prefix and `tsc` strips
-them, so the built file is exactly what a user can read.) All four drilled.
-Re-promotion is therefore a deliberate fence edit and can never be prose
-drifting back.
+**Fenced by inversion.** `tests/contract.test.ts` pins that the placeholder,
+the description, the BUILT node artifact and the README all do NOT contain
+`DEPLOY_TOKEN.PREFIX` (the built artifact, because `tsc` strips the comments
+that legitimately name the prefix). Re-promotion is therefore a deliberate
+fence edit, never prose drifting back.
 
 **Reversal condition:** when the platform starts promoting deploy tokens for
-integrations, restore the two-population copy. The inverted fences make that
-one commit — they go red the moment the copy returns, which is them asking
-whether it was meant.
+integrations, restore the two-population copy; the inverted fences go red the
+moment it returns, asking whether it was meant.
 
 Deploy attaches `Authorization` only when a token exists. Three boundary rules:
 
 - **No credential ATTACHED is the anonymous door**, and it is the product.
   `getCredentials` throws; the deploy proceeds keyless.
-- **A credential attached with an EMPTY slot is refused** (changed 2026-08-19).
-  Those are two different states and collapsing them is what made the 0.x
-  upgrade dangerous: a credential created for the 0.x node stored its value
-  under `apiKey`, which 1.x does not read, so every upgraded workflow arrives
-  with a credential attached and an empty `token`. Deploying that anonymously
-  SUCCEEDS and returns a public deployment expiring in days where the user
-  expected a permanent one under their account. **A wrong success is the worst
-  failure this node has.** The previous rule ("an empty field is absence of
-  intent", by analogy with an empty `SHIP_TOKEN`) held for an env var, where
-  unset is the normal CI state — attaching a credential in a UI is a
-  deliberate act, and the analogy did not survive it.
+- **A credential attached with an EMPTY slot is refused.** A credential created
+  for the 0.x node stored its value under `apiKey`, which this node does not
+  read, so an upgraded workflow arrives with a credential attached and an empty
+  `token`. Deploying that anonymously would SUCCEED with a public, expiring
+  deployment where the user expected a permanent one. **A wrong success is the
+  worst failure this node has.** Attaching a credential in a UI is a deliberate
+  act, unlike an unset env var.
 - **Fail-closed anonymity**: a token that is present and rejected fails with a
-  typed error. It never demotes the deploy to an anonymous one under
-  PUBLIC_ACCOUNT.
+  typed error. It never demotes the deploy to an anonymous one.
 
-**The other 0.x migration guard is IMPOSSIBLE, and that is measured rather than
-assumed.** A 0.x text-mode workflow stored `binaryData: false`, which 1.x does
-not declare; catching it would mean reading a stored-but-undeclared parameter.
-`getNodeParameters` (`n8n-workflow/dist/esm/node-helpers.js:509`) iterates the
-DECLARED property array, so such a key is never visited — there is nothing to
-read. Measured at n8n-workflow 2.12.0. That break stays loud by accident (the
-missing binary field errors) rather than by design, and its mitigation is the
-README's upgrade section plus the release notes.
+**The other 0.x migration guard is IMPOSSIBLE.** A 0.x text-mode workflow
+stored `binaryData: false`, which this node does not declare, and
+`getNodeParameters` iterates the DECLARED property array only, so the key is
+never visited. That break stays loud by accident (the missing binary field
+errors); the README's upgrade section and the release notes are the
+mitigation.
 
 **The credential test's documented limit.** `GET /account` is the connection
-test, and a `deploy-` token FAILS it: deploy tokens are deploy-scoped, and
-`/account` is not their right. This is not a wart to route around: the API
-answers a deploy token there with the same 401 as an invalid credential, so
-no probe can tell the two apart. Dropping the test or pointing it at `/ping`
-would trade a truthful "this credential can use the whole node" signal for a
-vacuous reachability blink. The field description and the 401 rule both say so,
-and `tests/live.test.ts` observes it against a real API.
+test, and a `deploy-` token FAILS it by design: deploy tokens are
+deploy-scoped. Dropping the test or pointing it at `/ping` would trade a
+truthful "this credential can use the whole node" signal for a vacuous
+reachability blink. The field description and the 401 rule both say so, and
+`tests/live.test.ts` observes it against a real API.
 
-The `handleDeploy` function is extracted from `execute()` to keep credential
-resolution (`getCredentials`) separate from request logic.
+`handleDeploy` is extracted from `execute()` to keep `getCredentials` separate
+from request logic.
 
 ### Global vs Per-Item Operations
 
-`list` and `account.get` are **global** — their result doesn't depend on input items. They run **once** regardless of input item count, and the output's `pairedItem` traces back to *all* input items so n8n's data flow stays honest. Per-item operations (`get`, `set`, `delete`, `dns`, `share`, `validate`, `verify`) loop over input items as usual, with `pairedItem: { item: i }`.
+`list` and `account.whoami` are **global**: their result doesn't depend on input items. They run **once** regardless of input item count, and the output's `pairedItem` traces back to *all* input items so n8n's data flow stays honest. Per-item operations (`get`, `set`, `delete`, `dns`, `share`, `validate`, `verify`) loop over input items, with `pairedItem: { item: i }`. A workflow piping 50 items into "list" must not fire 50 identical API calls; the `isGlobalOp` switch in `execute()` controls iteration count.
 
-This matters: a workflow piping 50 items into "list" should not fire 50 identical API calls. The `isGlobalOp` switch in `execute()` controls iteration count.
-
-Deploy is a special case — it collects ALL input items into a single deployment and pairs the one output to all of them.
-
-### listSearch (Resource Locator Backends)
-
-`deployment` and `domain` resource locators are populated by `methods.listSearch`:
-
-- `searchDeployments` — `GET /deployments` via `httpRequestWithAuthentication`, returns `INodeListSearchResult`
-- `searchDomains` — `GET /domains` via `httpRequestWithAuthentication`, returns `INodeListSearchResult`
-
-Both accept an optional `filter` arg from the resource locator's search input and narrow results case-insensitively. Both probe credentials first (`hasCredentials()` helper). When credentials are absent — the typical state while a user is wiring up the node — they return `{ results: [] }` silently so the dropdown stays quiet. **Once credentials exist, real failures (invalid key, API down, rate-limited) bubble up** to the n8n UI rather than being swallowed. The probe never makes a network request.
+Deploy is a special case: it collects ALL input items into a single deployment and pairs the one output to all of them.
 
 ### Options Collections
 
-Optional parameters are grouped into `type: 'collection'` fields named `options`:
+Optional parameters are grouped into `type: 'collection'` fields named `options`, read via `this.getNodeParameter('options', i) as IDataObject`:
 
-- **Deploy**: Labels, Password → accessed via `this.getNodeParameter('options', i) as IDataObject`
-- **Domain Set**: Deployment, Labels → same pattern
+- **Deploy**: Idempotency Key, Labels, Password, Single-Page App Routing, TTL
+- **Domain Set**: Deployment, Labels
 
-### Return All / Limit — the walk
+### Return All / Limit: the walk
 
-**The 2.x API paginates every list.** `ListOptions {limit, cursor}`; omitting
+**The API paginates every list.** `ListOptions {limit, cursor}`; omitting
 both returns the server's default first page; `cursor: null` is the entire
-has-more signal. The 1.x API did not paginate, which is why this node used to
-fetch once and slice — and why `Return All: true` silently stopped at the
-server's default. `returnAll` is a CONTRACT WORD in n8n's ecosystem: every core
-node's `returnAll` walks pages, and n8n's own lint rule
-(`node-param-description-wrong-for-return-all`) enforces the sentence
-"Whether to return all results or only up to a given limit" verbatim. The
-phrase never needed fixing; the behaviour did.
+has-more signal. `returnAll` is a CONTRACT WORD in n8n's ecosystem: every core
+node's `returnAll` walks pages, and n8n's lint rule
+(`node-param-description-wrong-for-return-all`) enforces the sentence "Whether
+to return all results or only up to a given limit" verbatim.
 
 `fetchList()` is the walk, and **no page size appears in this repo**:
 
 - `returnAll: true` → request with no `limit`, follow `cursor` until `null`.
 - `returnAll: false` + `limit: N` → ask for what is still needed, and keep going
   if the server returned less. The server clamps silently at its own cap; the
-  clamp is handled by CONTINUING, never by knowing the number. Restating the
-  cap here would give one fact two owners.
-- An empty page with a live cursor terminates the walk — out of contract, and
+  clamp is handled by CONTINUING, never by knowing the number.
+- An empty page with a live cursor terminates the walk: out of contract, and
   looping on it would hang an n8n execution rather than fail it.
 
-`listSearch` uses the same contract under n8n's own name: `INodeListSearchResult`
-carries `paginationToken`, and the listSearch signature receives it back on the
-next call. **The cursor IS the pagination token**, so the dropdowns scroll
-through everything instead of stopping at page one. Filtering stays client-side
-and therefore per page — the API has no filter query.
+`listSearch` uses the same contract under n8n's name: **the cursor IS the
+`paginationToken`**, so the dropdowns scroll through everything. Filtering
+stays client-side and per page (the API has no filter query).
 
 `cursor` is deliberately ABSENT from the item json: `returnAll`/`limit` is n8n's
-pagination abstraction, and handing a workflow a cursor it has no field to feed
-back would be a second, broken one.
+pagination abstraction, and a cursor with no field to feed it back would be a
+second, broken one.
 
-### Why this was invisible for a whole wave
+**Audit a consumer API-first.** A missing feature is invisible in the code that
+lacks it, so the inventory that finds one runs the API's contract against the
+consumer's coverage, never the consumer against itself.
 
-The §0 break inventory scanned the node's code for stale calls — the mint, the
-verbs, the credential — and caught every one. It could not catch pagination,
-because **a missing feature is invisible in the code that lacks it**. Neither
-could the live tier (the dev account holds fewer than one page) nor the typed
-fixtures (they carry `cursor`; the node ignored it). The inventory that finds
-this class runs the other direction: **the API's contract against the
-consumer's coverage, never the consumer against itself.**
+### Error Handling: the wire rides beside the message
 
-### Error Handling — the wire rides beside the message
-
-Uses n8n's standard pattern: `continueOnFail()` returns an error item; otherwise
-throws with `itemIndex` for precise attribution.
-
-**The item is typed.** The platform's law is "clients branch on error type and
-status, never on message strings", and a workflow engine is the caller MOST able
-to obey it — this json feeds an IF node. So `error` stays the message string
-(n8n's UI renders it) and the wire's own fields ride BESIDE it:
+`continueOnFail()` returns an error item; otherwise the node throws with
+`itemIndex`. **The item is typed.** Clients branch on error type and status, never on
+message strings, and this json feeds an IF node. So `error` stays the message
+string (n8n's UI renders it) and the wire's own fields ride BESIDE it:
 
 ```
 { error: "Deployment not found", errorType: "not_found", status: 404, details?: … }
@@ -702,163 +517,118 @@ to obey it — this json feeds an IF node. So `error` stays the message string
 
 Captured by `readWireError()` at the two request helpers, before `NodeApiError`
 wraps the failure, and read back at both `continueOnFail` sites via
-`errorItem()`. n8n's helpers surface a non-2xx body in different places
-depending on which of them threw, so each known shape is read and anything else
-is treated as ABSENT — **a transport failure carries `error` alone**. Inventing
-an `errorType` for a DNS failure would claim the platform answered when nothing
-did. Same posture as the MCP's `toErrorResult`.
-
-This was the failure-path mirror of returning delete acknowledgements verbatim,
-and it was missed by the wave that fixed the success path.
+`errorItem()`. n8n's helpers surface a non-2xx body in different places, so each
+known shape is read and anything else is treated as ABSENT: **a transport
+failure carries `error` alone**, since inventing an `errorType` would claim the
+platform answered when nothing did. The MCP's `toErrorResult` takes the same
+posture.
 
 ### The single-page question
 
 The node asks it of every deploy by default, exactly as the CLI, both MCP
-transports and the VS Code extension do: it sends `spa=true` unless the
-toggle is off, and when the files are an app the API writes the routing config
-(`cloudflare/api/src/lib/platform-files.ts`). So a
+transports and the VS Code extension do: it sends `spa=true` unless the toggle
+is off, and when the files are an app the API writes the routing config. So a
 React build deployed from a workflow deep-links instead of serving 404s on
-every route but `/`, on the one surface whose users are least equipped to know
-that `ship.json` is the remedy, and it costs no request of its own. The node
-holds no copy of the config, the classifier or its size bound.
+every route but `/`, for the users least equipped to know that `ship.json` is
+the remedy, at no extra request. The node holds no copy of the config, the
+classifier or its size bound.
 
 ### Option completeness
 
-**The inventory that produced this list ran API-first, 2026-08-19** — the
-direction this file's own "Why this was invisible for a whole wave" section
-prescribes, because auditing the consumer against itself cannot find a missing
-feature. Every public API route was enumerated and diffed against the node's
-fifteen operations. **All fifteen map to a live
-route; nothing the node offers is stale.** The uncovered routes, each with a
-verdict rather than a silence:
+**Every public API route was enumerated and diffed against the node's fifteen
+operations; all fifteen map to a live route.** Each uncovered route has a
+verdict:
 
 | Uncovered route | Verdict |
 |---|---|
-| `GET /deployments/:deployment/config` | **Refuse.** Neither the SDK nor either MCP exposes it — measured, not assumed. It serves the dashboard's config viewer; a workflow that wants the routing config has the `ship.json` it deployed |
-| `GET /domains/:domain/propagation` | **Refuse.** Same: no client exposes it. It backs the DNS-setup UI's live poll, which is a UI affordance rather than a workflow step — and `verify` is the operation that actually advances state |
-| `GET /labels` | **Refuse** — already recorded below; an open product call platform-wide, not an n8n gap |
-| `POST/GET/DELETE /tokens*` | **Refuse** — already recorded below (a credential is configured by the human) |
-| `GET /ping`, `GET /limits` | **Refuse** — already recorded below (diagnostics, not workflow steps) |
-| `GET /account/consent`, `PUT /account/key`, `POST /account/claim`, `DELETE /account` | **Refuse.** Account *administration*, not automation. `PUT /key` mints a credential (same reason as `/tokens`), `DELETE /account` is destructive-irreversible with no workflow use, and claiming is a human act on a one-time URL the deploy response already hands over |
-| `GET /activities` | **Refuse.** An audit feed for the dashboard. A workflow wanting deployment state reads the deployment |
-| First-party and operator routes | **Refuse by standing law**: they are not the node's surface. `/deployments` is the public contract; the deploy asks the single-page question itself |
+| `GET /deployments/:deployment/config` | **Refuse.** Neither the SDK nor either MCP exposes it. It serves the dashboard's config viewer; a workflow that wants the routing config has the `ship.json` it deployed |
+| `GET /domains/:domain/propagation` | **Refuse.** No client exposes it. It backs the DNS-setup UI's live poll, a UI affordance; `verify` is the operation that advances state |
+| `GET /labels` | **Refuse** for now: an open product call platform-wide, not an n8n gap |
+| `POST/GET/DELETE /tokens*` | **Refuse**: a credential is configured by the human |
+| `GET /ping`, `GET /limits` | **Refuse**: diagnostics, not workflow steps |
+| `GET /account/consent`, `PUT /account/key`, `POST /account/claim`, `DELETE /account` | **Refuse.** Account *administration*, not automation. `PUT /key` mints a credential, `DELETE /account` is destructive-irreversible with no workflow use, and claiming is a human act on a one-time URL the deploy response already hands over |
+| `GET /activities` | **Refuse.** An audit feed for the dashboard; a workflow wanting deployment state reads the deployment |
+| First-party and operator routes | **Refuse by standing law**: they are not the node's surface. `/deployments` is the public contract |
 
-**The node's surface is exactly the hosted MCP's fifteen.** That convergence is
-worth stating because it is the check on both: two independently-maintained
-agent-facing surfaces landing on the same fifteen verbs is evidence the line
-between "workflow step" and "UI affordance" is drawn in the right place.
+**The node's surface is exactly the hosted MCP's fifteen**, two
+independently maintained agent-facing surfaces landing on the same verbs.
 
-Every absence is a decision, recorded — the MCP's section, translated:
+Every other absence is a decision too:
 
-- **No `tokens` operations.** The MCP's reasoning verbatim: a credential is
-  configured by the human, never minted by the agent that would then hold it.
-- **No `ping` / `limits` operations.** Diagnostics, not workflow steps.
-- **No `GET /labels` operation.** An open product call platform-wide, not an
-  n8n-specific gap.
 - **No client-side prevalidation** of blocked extensions or junk files. Inputs
-  here are curated by upstream nodes, the API is the security boundary, and its
-  messages relay through `NodeApiError` intact. A second validator would be a
-  second owner of the rules.
-- **No `build` / `prerender` flags.** `/deployments` builds nothing; those
-  belong to first-party UI through `/upload`. (`spa` is different: it asks a
-  question of the files, it does not ask the server to build them.)
-- **A keyless workflow in a tight loop meets the anonymous limit at the
-  upload.** The deploy is the node's one request, and its per-IP budget is
-  what a credential-less loop runs into; a keyless 429 gets the "add an API
-  key" advice. The answer to "my deploys are rate limited" is an API key, not
-  a node change.
-- **No explicit deploy timeout.** The node passes none, so n8n's own default
-  applies and the deploy is bounded by the operator's `EXECUTIONS_TIMEOUT`.
-  This is deliberate: the SDK needed `DEFAULT_DEPLOY_TIMEOUT` because it drives
-  `fetch` and had to choose a number, whereas the helper here is HOST-provided
-  and a hardcoded value would override a deliberate operator setting. **If a
-  large deploy is ever reported timing out**, that is the thing to re-check —
-  set `timeout` on the `uploadDeployment` request options, sized like the SDK's
-  (30s cannot carry 50MB over a slow link).
+  are curated by upstream nodes, the API is the security boundary, and its
+  messages relay through `NodeApiError` intact.
+- **A keyless workflow in a tight loop meets the anonymous rate limit at the
+  upload**, the node's one request; a keyless 429 gets the "add an API key"
+  advice. The answer to "my deploys are rate limited" is an API key, not a node
+  change.
+- **No explicit deploy timeout.** n8n's own default applies and the deploy is
+  bounded by the instance's `EXECUTIONS_TIMEOUT`: the helper is HOST-provided,
+  and a hardcoded value would override a deliberate setting. **If a large
+  deploy is reported timing out**, set `timeout` on the `uploadDeployment`
+  request options, sized like the SDK's `DEFAULT_DEPLOY_TIMEOUT`.
 
 ### Labels
 
 Labels are comma-separated strings in the UI, parsed to `string[]` by `parseLabels()`. Returns `undefined` for empty input (not empty array) to distinguish "not provided" from "clear all".
 
-**Domain Set vs Deployment Set merge semantics:** both use the same rule — if the user added the Labels option (key present in `options`), behavior is "set" (`['a','b']` to replace, `[]` to clear). If they didn't add Labels at all, the key is omitted from the request body and the API preserves existing labels. This matches the merge-upsert contract on `PUT /domains/:name`.
+**Domain Set and Deployment Set share one merge rule:** if the user added the Labels option (key present in `options`), behaviour is "set" (`['a','b']` to replace, `[]` to clear). If not, the key is omitted and the API preserves existing labels, matching the merge-upsert contract on `PUT /domains/:name`.
 
-### How an AI Agent actually reaches this node — MEASURED, not assumed
+### How an AI Agent reaches this node
 
-Measured 2026-08-19 against `n8n-workflow@2.12.0`
-(`dist/esm/from-ai-parse-utils.js`, `constants.js`). This is the premise the
-Files (JSON) input mode rests on, so it is recorded as a measurement with its
-date and version rather than as a belief.
+Read from `n8n-workflow`'s shipped implementation (`from-ai-parse-utils.js`,
+`constants.js`); the Files (JSON) mode rests on it.
 
 **The agent's only channel into a node is `$fromAI()`, and it carries four
-types: `string`, `number`, `boolean`, `json`.** A user (or n8n's own
-auto-override, marked with `/*n8n-auto-generated-fromAI-override*/`) puts a
+types: `string`, `number`, `boolean`, `json`.** A user (or n8n's auto-override,
+marked `/*n8n-auto-generated-fromAI-override*/`) puts a
 `$fromAI('key', 'description', 'type', default)` call into a parameter's
-expression; n8n extracts those calls and builds the tool schema the LLM sees
-from them.
+expression; n8n builds the tool schema the LLM sees from those calls.
 
-Two consequences, and both are load-bearing:
-
-1. **There is no binary channel in a tool invocation.** `$fromAI` has no
-   binary type, and binary data reaches a node through input items rather than
-   parameters. So Binary Files mode is genuinely unreachable from a pure agent
-   tool call — **the Files (JSON) mode's justifying premise holds.**
-2. **A `json` parameter arrives ALREADY PARSED.** `generateZodSchema` builds a
-   custom validator for the `json` case requiring "a non-empty object or a
-   non-empty array" — it type-checks the *value*, so what lands on the
-   parameter is a real array, not a string containing one. **The
-   resolved-value shape is therefore the PRIMARY agent path, not an edge
-   case**, which is why the files field must accept both shapes rather than
-   treating `JSON.parse` as the normal route and the rest as defensive
-   programming.
-
-Still owed at T7: confirming in a live n8n UI that the `files` field surfaces
-in the generated tool schema and how the auto-override presents it. The
-mechanism above is read from the shipped implementation; the UI is the part a
-source read cannot settle.
+1. **There is no binary channel in a tool invocation.** Binary reaches a node
+   through input items, not parameters, so Binary Files mode is unreachable
+   from a pure agent tool call.
+2. **A `json` parameter arrives ALREADY PARSED.** `generateZodSchema` validates
+   the *value* ("a non-empty object or a non-empty array"), so the files field
+   must accept the resolved value as its PRIMARY path, not as defensive code.
 
 ### AI-Agent Hints in Operation Descriptions
 
-`usableAsTool: true` means n8n's AI Agent feature exposes this node's operations to LLMs using the `description` strings as the tool catalog. We deliberately keep descriptions terse for the dropdown UX, but **append agent guidance** to the high-stakes ops:
+`usableAsTool: true` means n8n's AI Agent exposes this node's operations to LLMs using the `description` strings as the tool catalogue. Descriptions stay terse for the dropdown, with **agent guidance appended** to the high-stakes ops:
 
-- **Deploy** mentions the claim URL convention and the password-Options affordance. The claim promise is FENCED (`tests/contract.test.ts`) — it is the only way a keyless deployment is ever kept, so an edit that drops it fails the suite.
+- **Deploy** mentions the claim URL convention and the password-Options affordance. The claim promise is FENCED (`tests/contract.test.ts`): it is the only way a keyless deployment is ever kept.
 - **Deployment Delete / Domain Delete** include "Confirm with the user before calling this — it cannot be undone." A fence in `tests/contract.test.ts` holds both.
 
-The MCP servers carry no such sentences since `@shipstatic/mcp` 1.11.0: there, confirmation is the `destructiveHint` annotation's job and the claim relay lives in the server's `instructions`, because both listing reviews reject a tool description that instructs the model. n8n has neither annotations nor instructions, so its operation descriptions are the only place the guidance can live, and it stays here, softly worded because n8n-driven agents typically pipe results downstream. If you add a destructive op, mirror this pattern.
+The MCP servers carry no such sentences: there, confirmation is the `destructiveHint` annotation's job and the claim relay lives in the server's `instructions`. n8n has neither, so the descriptions are the only place the guidance can live, softly worded because n8n-driven agents typically pipe results downstream. If you add a destructive op, mirror this pattern.
 
 ## Testing
 
 ```bash
-pnpm test --run     # All tests (~250ms)
+pnpm test --run     # All tests
 pnpm coverage       # …plus the ratchet: 100 statements/functions/lines, 98.2 branches
 ```
 
-The default tier mocks `helpers.request` and `helpers.httpRequestWithAuthentication` — no real HTTP calls. Two files sit beside it:
+The default tier mocks `helpers.request` and `helpers.httpRequestWithAuthentication`: no real HTTP calls. Two files sit beside it:
 
-- **`tests/contract.test.ts`** — the fences (see "The sandbox contract"). They hold what a percentage cannot: restated platform values, the operation catalogue, the published README, and the built artifact's imports.
-- **`tests/live.test.ts`** — the same `execute()` against a real API, opt-in via `SHIP_API_URL`. It is the only tier that can observe the platform rather than the node's self-consistency, and it is what proved the `/tokens/agent` deletion, the claim/expiry pass-through, `via` landing in the database, and the deploy-token 401.
+- **`tests/contract.test.ts`**: the fences (see "The sandbox contract"). They hold what a percentage cannot: restated platform values, the operation catalogue, the published README, and the built artifact's imports.
+- **`tests/live.test.ts`**: the same `execute()` against a real API, opt-in via `SHIP_API_URL`. The only tier that observes the platform rather than the node's self-consistency: the claim/expiry pass-through, `via` landing, the deploy-token 401.
 
-**Running it needs both credential tiers, and the deploy token is MINTED for
-the run.** `SHIP_TOKEN` is an API key for the API under test, read without
-ever printing its value. `SHIP_DEPLOY_TOKEN` is minted through `POST /tokens`
-with a short `ttl` and a `n8n-live-walk` label, and deleted when the run ends,
-so no long-lived scratch credential accumulates.
+**The live tier has two credential halves, and each block skips
+independently.** `SHIP_TOKEN`, an API key for the API under test read without
+ever printing its value, unlocks the authenticated blocks; `SHIP_DEPLOY_TOKEN`
+unlocks the deploy-token scope block. The deploy token is minted for the run
+(`POST /tokens` with a short `ttl` and a label) and deleted when the run ends,
+so no long-lived scratch credential accumulates. That does not contradict the "no `tokens`
+operations" refusal: the refusal governs what an agent driving the node is
+handed, and a harness creating a scoped, short-lived credential on a test
+account and destroying it is a different act.
 
-That mint does NOT contradict the "no `tokens` operations" refusal below. That
-refusal governs **the node's operation surface** — what an agent driving this
-node is handed, where the rule is that a credential is configured by a human
-and never minted by the thing that would then hold it. A test harness creating
-a scoped, short-lived credential on a test account and destroying it afterwards
-is a different act with a different blast radius. The two only look alike.
+**Served HTML is rewritten in transit.** The platform adds an immutable-cache
+buster to asset URLs, so a deployed `<img src="pixel.gif">` is served as
+`pixel.gif?_ship=…`. Live tests assert CONTENT for HTML and byte equality only
+for binaries, where nothing rewrites.
 
-**What the live tier taught that a mock cannot: HTML is rewritten in transit.**
-The router adds an immutable-cache buster to asset URLs, so a deployed
-`<img src="pixel.gif">` is served as `pixel.gif?_ship=…`. A deployed file is
-not necessarily a byte-identical served file — which is why the files-mode row
-asserts CONTENT for the HTML and byte equality only for the binary, where
-nothing rewrites. The first version of that row asserted byte equality on the
-HTML and failed on precisely this.
-
-The branch ratchet is 98.2 for exactly the implicit `else` arms on the `operation` chains in `execute()`, unreachable because n8n only ever passes a value from the `options` array it rendered. Named in `vitest.config.ts`, not rounded away.
+The branch ratchet is 98.2 for exactly the implicit `else` arms on the `operation` chains in `execute()`, unreachable because n8n only passes a value from the `options` array it rendered. Named in `vitest.config.ts`, not rounded away.
 
 ### Organization
 
@@ -885,7 +655,7 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 
 ### Adding new coverage
 
-1. **Identify the implementation surface** the new behavior belongs to (HTTP helper? `handleDeploy` step? `execute()` routing? `listSearch`?).
+1. **Identify the implementation surface** the new behaviour belongs to (HTTP helper? `handleDeploy` step? `execute()` routing? `listSearch`?).
 2. **Add to the matching describe.** Don't create a new describe unless the surface itself is new.
 3. **For new resources/operations**, add a single endpoint-shape test in the resource's describe (method + URL + body); add a per-item or global-fan-out test in `Global vs per-item iteration` if the iteration shape is non-trivial.
 
@@ -895,51 +665,19 @@ Tests are organized by **implementation surface**, mirroring the file's top-down
 2. Add parameter fields with `displayOptions` to show/hide per operation
 3. Add HTTP call in the `execute()` method's resource/operation routing via `apiRequest()`
 4. List operations: fan out the array into separate n8n items
-5. **Never fabricate a response.** The wire's acknowledgement IS the item json — `{ deployment, status: 'deleting' }`, `{ domain }`, `{ domain, hash }`. The old doctrine here was "void operations: return `{ success: true }`", and it was the platform's "state, not boolean" anti-pattern with a WORKFLOW ENGINE as its consumer: the caller most able to branch on structure, handed the least. A deployment delete is asynchronous — the site stays served until cleanup completes — and `success: true` threw exactly the state a workflow would want to wait on.
+5. **Never fabricate a response.** The wire's acknowledgement IS the item json: `{ deployment, status: 'deleting' }`, `{ domain }`, `{ domain, hash }`. Never `{ success: true }`: a workflow engine is the caller most able to branch on structure, and a deployment delete is asynchronous (the site stays served until cleanup completes), which is exactly the state a workflow would wait on.
 6. Add it to `CATALOGUE` in `tests/contract.test.ts` and to the README table; both are fenced.
 
 ## Known Gotchas
 
-### The real-n8n sitting — what it proved, 2026-08-19
-
-Walked against **n8n 2.35.4** with the PUBLISHED `1.0.0-beta.4` installed into
-an isolated `N8N_USER_FOLDER` (not `~/.n8n` — an operator database lives there),
-dev-seamed by patching the one constant in the installed
-`dist/nodes/Shipstatic/api.js`, the same seam `live.test.ts` substitutes. No
-production key, no production deploy.
-
-Proven, in a real host rather than against a mock of one:
-
-- **The node loads** and reports `usableAsTool: true`, `version: 1`.
-- **T9's converged vocabulary is what the host actually serves**:
-  `upload ("Deploy")`, `whoami ("Whoami")`, the nine domain verbs, three input
-  modes with `binary` as default, and the `files` field present. This is the
-  same payload an AI Agent's tool schema is built from, so it doubles as T0b's
-  confirmation.
-- **A keyless deploy really works end to end.** Text mode, no credential →
-  live URL, claim URL, `via: "n8n"`, an expiry — and the site serves.
-- **Files mode works through the host, and base64 survives it BYTE-FOR-BYTE.**
-  A two-file site (HTML + a base64 GIF) deployed, and the GIF fetched back
-  equals the original bytes. **This is the one claim the mocked suite
-  structurally cannot make**: that n8n's real `request` helper produces working
-  multipart. That was "measured across v0.5–0.6" and had never been re-verified
-  on n8n 2.x until now.
-
-Two host facts worth keeping:
+### Running a real n8n
 
 - **n8n injects `__CUSTOM_API_CALL__`** into the resource and operation lists of
-  any credentialed node — 322 of the 981 node types in that install. It is not
-  ours, it does not appear in our `options` arrays, and the catalogue fence is
-  right to ignore it. Do not "fix" it.
+  any credentialed node. It is not ours, it is absent from our `options` arrays,
+  and the catalogue fence is right to ignore it. Do not "fix" it.
 - **`pnpm dlx n8n` cannot boot**: the SQLite driver is a native binding pnpm's
-  dlx store does not build, and n8n dies at DB init. Use `npx n8n@latest start`.
-
-**Honest remainder — NOT walked**, each needing a credential the sitting did
-not configure: the credential create + connection test in the UI, resource
-locators populating and paginating, binary mode from an upstream node, the icon
-render, and a live AI Agent run (needs an LLM credential). The agent SCHEMA leg
-is covered by the node-types payload above; only the live agent execution is
-outstanding.
+  dlx store does not build. Use `npx n8n@latest start`, with an isolated
+  `N8N_USER_FOLDER` so a test install never touches your own `~/.n8n`.
 
 ### `pnpm dev` Does Not Render `file:` Icons
 
@@ -948,81 +686,55 @@ outstanding.
 ### The Themed-Icon Warning Is Refused On The Merits
 
 `@n8n/community-nodes/icon-prefer-themed-variants` wants
-`icon: { light, dark }`, and the `n8n-workflow` typing has allowed that form
-since well before the pinned version (`Themed<IconFile>`, `interfaces.d.ts`).
-So the blocker was never the types, and it is not a missing asset either.
+`icon: { light, dark }`, and the `n8n-workflow` typing allows that form
+(`Themed<IconFile>`). Neither the types nor a missing asset is the reason.
 
 **The rule warns on SHAPE and cannot see content.** It fires on any string
-icon. The problem it exists for is the icon with a transparent ground and dark
+icon; the problem it exists for is an icon with a transparent ground and dark
 strokes, which vanishes on a dark canvas. This mark is a solid `#EE6723` tile
-with white glyphs — it carries its own ground and renders identically either
-way. A themed pair would be two files differing in nothing.
+with white glyphs: it carries its own ground and renders identically either
+way, so a themed pair would be two files differing in nothing. Nothing is owed
+and no asset is pending.
 
-Recorded as a REFUSAL rather than a deferral, because the difference matters to
-whoever reads the suppression next: nothing is owed, and no operator asset is
-pending. **Expiry:** if the brand mark ever loses its tile — a transparent
-ground, or glyphs that borrow the host's colour — the rule becomes correct and
-the pair is owed that day.
+**Expiry:** if the brand mark ever loses its tile (a transparent ground, or
+glyphs that borrow the host's colour), the rule becomes correct and the pair is
+owed that day.
 
-The suppression sits inline at the `icon` line, not in `eslint.config.mjs`, so
-the decision is visible where the icon is. It is the only suppression in the
-tree, which is what `--max-warnings 0` is for.
+The suppression sits inline at the `icon` line, the only one in the tree. The
+verification scan ignores it (`allowInlineConfig: false`) and reports the
+warning, which does not fail the scan.
 
 ### SVG Icon Requirements
 
 No `<filter>`, `<clipPath>`, `<mask>`, `<style>`, or embedded CSS. n8n sanitizes SVGs and strips these.
 
-### Dependabot Reports ~58 Alerts And Zero Of Them Ship
+### Dependabot alerts: read the scope column, not the count
 
-Measured 2026-08-18: 1 critical, 25 high, 28 moderate, 4 low on the default
-branch. **The correct response is to read the scope column, not the count.**
+- **Everything dev-scoped** arrives through `@n8n/node-cli` and its toolchain.
+  It never reaches `dist/`, and `dist/` is the whole published artifact.
+- **The "runtime"-scoped alerts** come from `n8n-workflow`, a
+  **peerDependency**: the user's n8n instance provides it, at whatever version
+  it carries, so there is nothing to patch here, and pinning it would dictate
+  the host's internals. Narrowing the peer range would not change this.
 
-- **Everything dev-scoped** — including the critical (`handlebars`, JS injection
-  via AST type confusion) — arrives through `@n8n/node-cli` →
-  `@n8n/ai-node-sdk` → `@n8n/ai-utilities` → langchain. That is the build
-  toolchain. It never reaches `dist/`, and `dist/` is the whole published
-  artifact.
-- **The three "runtime"-scoped alerts** (`lodash` ×2, `form-data`) come from
-  `n8n-workflow`, which is a **peerDependency**. Dependabot scores peers as
-  runtime. We do not ship it — the user's n8n instance provides it, at whatever
-  version that instance carries — so there is nothing to patch here. Pinning it
-  would mean this node dictating the host's own internals.
-
-The zero-dependency architecture is what makes the count irrelevant, and it is
-PROVEN rather than asserted: `dependencies: {}` on the registry, and
-`tests/contract.test.ts`'s artifact fence showing the built bytes require
-nothing but `n8n-workflow` and `node:crypto`.
-
-**So this number will never reach zero and must not be chased.** The one real
-maintenance action is keeping `@n8n/node-cli` current — exact-pinned by the
-artifact-tool law, so it moves as a deliberate bump, not a range resolution.
-Narrowing the `n8n-workflow` peer range would not change any of this.
+The zero-dependency architecture makes the count irrelevant, and it is proven:
+`dependencies: {}` on the registry and the artifact fence over the built bytes.
+**The number will never reach zero and must not be chased.** The one real
+maintenance action is keeping `@n8n/node-cli` current, as a deliberate bump.
 
 ### `n8n-node build` Sweeps the WHOLE Repo for `.png` / `.svg`
 
 `@n8n/node-cli`'s `copyStaticFiles` globs `**/*.{png,svg}` across the entire
-repository — ignoring only `dist` and `node_modules` — and copies every match
-into `dist/`. It is how the node and credential icons get built, and it does not
-distinguish them from anything else.
+repository (ignoring only `dist` and `node_modules`) and copies every match into
+`dist/`. So `pnpm coverage` (which writes `coverage/favicon.png`) followed by a
+pack would ship coverage assets, and `prepack` makes a local `npm pack` a
+sanctioned path.
 
-So `pnpm coverage` (which writes `coverage/favicon.png` and
-`coverage/sort-arrow-sprite.png`) followed by a pack put those two files in the
-published tarball. **The tarball's contents depended on which untracked
-directories happened to exist at build time** — measured 2026-08-19, and made to
-matter by `prepack`, which turns a local `npm pack` into a sanctioned path.
-
-The fix is in the manifest, not the build: `files` enumerates the artifact
-(`dist/credentials`, `dist/nodes`) instead of sweeping `dist`. A stray asset can
-still land in `dist/` and now cannot ship — and `dist/package.json` and
-`dist/tsconfig.tsbuildinfo` stopped shipping with it. `tests/contract.test.ts`
-holds both halves: the exact `files` value, and that every path the manifest
-declares as an entry point (`main`, the `n8n` block) lives inside a shipped
-tree — because narrowing `files` without that second check could publish a
-package whose own `n8n` block points at files it does not contain.
-
-The old assertion was `expect(PKG.files).toEqual(['dist'])` under the name
-"ships nothing but dist/". It stated a value where an invariant belonged, and
-the value it stated was the one that let the sweep through.
+**`files` enumerates the artifact** (`dist/credentials`, `dist/nodes`) instead
+of sweeping `dist`. `tests/contract.test.ts` holds both halves: the exact
+`files` value, and that every path the manifest declares as an entry point
+(`main`, the `n8n` block) lives inside a shipped tree, so narrowing `files`
+cannot publish a package whose own `n8n` block points at files it lacks.
 
 ### `~/.n8n/custom/` Needs a `package.json`
 
@@ -1035,7 +747,7 @@ When manually installing, `npm init -y` first. Without it, npm installs into a p
 | Field | Modes | Notes |
 |---|---|---|
 | `deployment` (top-level + inner Options) | `list` (search the user's deployments), `id` (free-text hostname) | Powered by `methods.listSearch.searchDeployments` |
-| `domain` (top-level, ALL domain ops) | `list` (search the user's domains), `name` (free-text — supports new domains for `set` / `validate`) | Powered by `methods.listSearch.searchDomains` |
+| `domain` (top-level, ALL domain ops) | `list` (search the user's domains), `name` (free-text, supports new domains for `set` / `validate`) | Powered by `methods.listSearch.searchDomains` |
 
 Reading values in `execute()`:
 
@@ -1044,12 +756,14 @@ Reading values in `execute()`:
 const id = this.getNodeParameter('deployment', i, '', { extractValue: true }) as string;
 const name = this.getNodeParameter('domain', i, '', { extractValue: true }) as string;
 
-// Inner-collection resource locators — `extractValue` only works at the top
+// Inner-collection resource locators: `extractValue` only works at the top
 // level, so we unwrap manually via `extractResourceLocatorValue()`:
 const linked = extractResourceLocatorValue(domainOptions.deployment);
 ```
 
-`searchDeployments` / `searchDomains` share `searchPage()`: one page per call, the API's `cursor` returned as n8n's `paginationToken` so the dropdown scrolls through everything, and a client-side filter over that page (the API has no filter query). Both use the same `hasCredentials()` probe as the rest of the node — silent empty results when the user hasn't configured credentials yet, real errors surface once they have.
+`methods.listSearch.searchDeployments` (`GET /deployments`) and `searchDomains` (`GET /domains`) go through `httpRequestWithAuthentication`, return `INodeListSearchResult`, and share `searchPage()`: one page per call, the API's `cursor` returned as n8n's `paginationToken`, and a case-insensitive client-side `filter` over that page.
+
+Both probe credentials first (`hasCredentials()`, no network request): without credentials, the usual state while a user wires up the node, they return `{ results: [] }` silently. **Once credentials exist, real failures (invalid key, API down, rate-limited) bubble up** to the n8n UI.
 
 ---
 
