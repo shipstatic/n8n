@@ -609,11 +609,10 @@ missing binary field errors) rather than by design, and its mitigation is the
 README's upgrade section plus the release notes.
 
 **The credential test's documented limit.** `GET /account` is the connection
-test, and a `deploy-` token FAILS it — deploy tokens are deploy-scoped, and
+test, and a `deploy-` token FAILS it: deploy tokens are deploy-scoped, and
 `/account` is not their right. This is not a wart to route around: the API
-refuses a deploy token at the auth boundary with a 401 **byte-identical to a
-garbage credential** (`token_endpoint_not_allowed` is internal only), so no
-probe could distinguish the two. Dropping the test or pointing it at `/ping`
+answers a deploy token there with the same 401 as an invalid credential, so
+no probe can tell the two apart. Dropping the test or pointing it at `/ping`
 would trade a truthful "this credential can use the whole node" signal for a
 vacuous reachability blink. The field description and the 401 rule both say so,
 and `tests/live.test.ts` observes it against a real API.
@@ -728,8 +727,8 @@ holds no copy of the config, the classifier or its size bound.
 **The inventory that produced this list ran API-first, 2026-08-19** — the
 direction this file's own "Why this was invisible for a whole wave" section
 prescribes, because auditing the consumer against itself cannot find a missing
-feature. Every non-admin route in `cloudflare/api/src/routes/` was enumerated
-and diffed against the node's fifteen operations. **All fifteen map to a live
+feature. Every public API route was enumerated and diffed against the node's
+fifteen operations. **All fifteen map to a live
 route; nothing the node offers is stale.** The uncovered routes, each with a
 verdict rather than a silence:
 
@@ -742,7 +741,7 @@ verdict rather than a silence:
 | `GET /ping`, `GET /limits` | **Refuse** — already recorded below (diagnostics, not workflow steps) |
 | `GET /account/consent`, `PUT /account/key`, `POST /account/claim`, `DELETE /account` | **Refuse.** Account *administration*, not automation. `PUT /key` mints a credential (same reason as `/tokens`), `DELETE /account` is destructive-irreversible with no workflow use, and claiming is a human act on a one-time URL the deploy response already hands over |
 | `GET /activities` | **Refuse.** An audit feed for the dashboard. A workflow wanting deployment state reads the deployment |
-| `GET /domains-check`, `POST /setup`, `POST /upload`, `POST /spa-check`, `/billing/*`, `/webhooks/*`, `/unsubscribe`, `/admin/*` | **Refuse by standing law**: first-party-only surfaces, and `/spa-check` the question asked without deploying, which the deploy asks itself. `/upload` in particular is the build door; `/deployments` is the public contract, and that split is the platform's, not this node's |
+| First-party and operator routes | **Refuse by standing law**: they are not the node's surface. `/deployments` is the public contract; the deploy asks the single-page question itself |
 
 **The node's surface is exactly the hosted MCP's fifteen.** That convergence is
 worth stating because it is the check on both: two independently-maintained
@@ -839,17 +838,16 @@ The default tier mocks `helpers.request` and `helpers.httpRequestWithAuthenticat
 - **`tests/live.test.ts`** — the same `execute()` against a real API, opt-in via `SHIP_API_URL`. It is the only tier that can observe the platform rather than the node's self-consistency, and it is what proved the `/tokens/agent` deletion, the claim/expiry pass-through, `via` landing in the database, and the deploy-token 401.
 
 **Running it needs both credential tiers, and the deploy token is MINTED for
-the run.** `SHIP_TOKEN` is the dev API key from `~/.shiprc-dev` (read under the
-credential-reader law: `JSON.parse(readFileSync(...))`, never `require()`,
-never echo a value). `SHIP_DEPLOY_TOKEN` is minted through `POST /tokens` on
-dev with a short `ttl` and a `n8n-live-walk` label, and deleted when the run
-ends — so no long-lived scratch credential accumulates.
+the run.** `SHIP_TOKEN` is an API key for the API under test, read without
+ever printing its value. `SHIP_DEPLOY_TOKEN` is minted through `POST /tokens`
+with a short `ttl` and a `n8n-live-walk` label, and deleted when the run ends,
+so no long-lived scratch credential accumulates.
 
 That mint does NOT contradict the "no `tokens` operations" refusal below. That
 refusal governs **the node's operation surface** — what an agent driving this
 node is handed, where the rule is that a credential is configured by a human
 and never minted by the thing that would then hold it. A test harness creating
-a scoped, short-lived credential on a dev account and destroying it afterwards
+a scoped, short-lived credential on a test account and destroying it afterwards
 is a different act with a different blast radius. The two only look alike.
 
 **What the live tier taught that a mock cannot: HTML is rewritten in transit.**
