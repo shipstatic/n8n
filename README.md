@@ -75,7 +75,7 @@ overwrites one you shipped yourself.
 
 ## Keep your sites with a free account
 
-Everything above works with no account. A free account keeps your sites for good, lets you use your own domain, and shows you everything you've published in one place. To connect one here:
+Everything above works with no account. A free account keeps your sites for good, gives you a ShipStatic domain like `yourname.shipstatic.com`, and shows you everything you've published in one place. A custom domain like `www.example.com` needs a paid plan. To connect an account here:
 
 1. Get a free key at [my.shipstatic.com/api-key](https://my.shipstatic.com/api-key)
 2. In n8n, go to **Credentials > New Credential > ShipStatic API**
