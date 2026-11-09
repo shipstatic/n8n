@@ -233,7 +233,7 @@ describe.skipIf(!API_URL || !TOKEN)('live — SPA routing', () => {
 
 describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
   // The one tier that can prove the whole files-mode path: JSON in, strict
-  // base64 decode, multipart out, R2 storage, and the router serving the bytes
+  // base64 decode, multipart out, R2 storage, and the serving worker serving the bytes
   // back. Every step between the parser and the served file is somebody else's
   // code, so self-consistency proves nothing here.
   it('deploys a two-file site and serves both files back byte-for-byte', async () => {
@@ -265,12 +265,11 @@ describe.skipIf(!API_URL || !TOKEN)('live — Files (JSON) mode', () => {
 
     const base = `https://${item.json.deployment}`;
 
-    // **HTML is NOT served byte-identical, by design.** The router rewrites
-    // asset URLs with an immutable-cache buster — `pixel.gif` comes back as
-    // `pixel.gif?_ship=…` — which is a platform feature, not damage. This
-    // assertion asserted byte equality on the first run and failed on exactly
-    // that, which is the live tier earning its place: no mock of n8n's helpers
-    // can show what the ROUTER does to a file after it is stored.
+    // **HTML is NOT served byte-identical, by design.** The platform rewrites
+    // asset URLs at upload with an immutable-cache buster (`pixel.gif` comes
+    // back as `pixel.gif?_ship=…`), which is a platform feature, not damage.
+    // No mock of n8n's helpers can show what the platform does to a file
+    // after it is stored, which is why this live tier exists.
     const servedHtml = await fetch(`${base}/index.html`);
     expect(servedHtml.status).toBe(200);
     const servedText = await servedHtml.text();
